@@ -6,7 +6,6 @@
 
 #pragma once 
 #include <string>
-#include <cstdint>
 namespace currency
 {
 #pragma pack(push, 1)
