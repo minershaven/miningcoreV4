@@ -29,6 +29,7 @@
 #include "offshore/pricing_record.h"
 #include "zephyr_oracle/pricing_record.h"
 #include "salvium_oracle/pricing_record.h"
+#include "arq_txtypes.h"
 
 
 namespace cryptonote
@@ -383,6 +384,7 @@ namespace cryptonote
     uint64_t amount_burnt;
     uint64_t amount_minted;
     std::vector<uint64_t> output_unlock_times;
+    cryptonote_arq::txtype arq_tx_type;
     std::vector<uint32_t> collateral_indices;
     // SALVIUM-SPECIFIC FIELDS
     // TX type
@@ -429,6 +431,13 @@ namespace cryptonote
         if (version == loki_version_3_per_output_unlock_times)
           FIELD(is_deregister)
       }
+      if (version >= static_cast<size_t>(cryptonote_arq::txversion::v3) && (blob_type == BLOB_TYPE_CRYPTONOTE_ARQMA))
+      {
+        VARINT_FIELD(arq_tx_type)
+        if (static_cast<uint16_t>(arq_tx_type) >= static_cast<uint16_t>(cryptonote_arq::txtype::_count))
+          return false;
+        FIELD(output_unlock_times)
+      }
       if (blob_type != BLOB_TYPE_CRYPTONOTE_XHV || version < POU_TRANSACTION_VERSION)
         VARINT_FIELD(unlock_time)
 
@@ -446,9 +455,9 @@ namespace cryptonote
       else
         FIELD(vout)
 
-      if (blob_type == BLOB_TYPE_CRYPTONOTE_LOKI || blob_type == BLOB_TYPE_CRYPTONOTE_XTNC)
+      if (blob_type == BLOB_TYPE_CRYPTONOTE_LOKI || blob_type == BLOB_TYPE_CRYPTONOTE_XTNC || blob_type == BLOB_TYPE_CRYPTONOTE_ARQMA)
       {
-        if (version >= loki_version_3_per_output_unlock_times && vout.size() != output_unlock_times.size()) return false;
+        if ((version >= loki_version_3_per_output_unlock_times || version >= static_cast<size_t>(cryptonote_arq::txversion::v3)) && vout.size() != output_unlock_times.size()) return false;
       }
       FIELD(extra)
       if ((blob_type == BLOB_TYPE_CRYPTONOTE_LOKI || blob_type == BLOB_TYPE_CRYPTONOTE_XTNC) && version >= loki_version_4_tx_types)
@@ -621,6 +630,7 @@ namespace cryptonote
     amount_burnt = 0;
     amount_minted = 0;
     output_unlock_times.clear();
+    arq_tx_type = cryptonote_arq::txtype::standard;
     collateral_indices.clear();
     // Salvium-specific fields
     type = cryptonote::salvium_transaction_type::UNSET;
