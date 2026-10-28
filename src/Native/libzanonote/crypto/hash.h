@@ -1,5 +1,3 @@
-// Copyright (c) 2014-2018 Zano Project
-// Copyright (c) 2014-2018 The Louisdor Project
 // Copyright (c) 2012-2013 The Cryptonote developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
@@ -11,10 +9,10 @@
 #include "common/pod-class.h"
 #include "generic-ops.h"
 #include "warnings.h"
-PUSH_WARNINGS
+PUSH_VS_WARNINGS
 DISABLE_VS_WARNINGS(4804)
 #include "blake2.h"
-POP_WARNINGS
+POP_VS_WARNINGS
 namespace crypto {
 
   extern "C" {

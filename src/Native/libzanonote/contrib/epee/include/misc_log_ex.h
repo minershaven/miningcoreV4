@@ -39,6 +39,7 @@
 #include <fstream>
 #include <algorithm>
 #include <list>
+#include <limits>
 #include <map>
 #include <set>
 #include <time.h>
@@ -56,7 +57,7 @@
 #endif
 #include "os_defenitions.h"
 #include "warnings.h"
-PUSH_WARNINGS
+PUSH_VS_WARNINGS
 DISABLE_VS_WARNINGS(4100)
 
 
@@ -81,11 +82,12 @@ DISABLE_VS_WARNINGS(4100)
 #define LOG_LEVEL_MAX   LOG_LEVEL_4
 
 
-#define   LOGGER_NULL       0
-#define   LOGGER_FILE       1
-#define   LOGGER_DEBUGGER   2
-#define   LOGGER_CONSOLE    3
-#define   LOGGER_DUMP       4
+#define   LOGGER_NULL                0
+#define   LOGGER_FILE                1
+#define   LOGGER_DEBUGGER            2
+#define   LOGGER_CONSOLE             3
+#define   LOGGER_DUMP                4
+#define   LOGGER_CONSOLE_NO_ALLOC    5
 
 #define LOG_JOURNAL_MAX_ELEMENTS 100
 
@@ -138,6 +140,10 @@ DISABLE_VS_WARNINGS(4100)
 #define LOG_PRINT_CHANNEL_COLOR2_CB(log_channel, log_name, x, y, color, cb) {if ( (y) <= epee::log_space::log_singletone::get_log_detalisation_level() && epee::log_space::log_singletone::channel_enabled(log_channel))\
   {TRY_ENTRY();std::stringstream ss________; ss________ << epee::log_space::log_singletone::get_prefix_entry() << x << std::endl;epee::log_space::log_singletone::do_log_message(ss________.str(), y, color, false, log_name); cb(ss________.str());CATCH_ALL_DO_NOTHING();}}
 
+#define LOG_PRINT_CHANNEL_COLOR2_CB_NO_PREFIX(log_channel, log_name, x, y, color, cb) {if ( (y) <= epee::log_space::log_singletone::get_log_detalisation_level() && epee::log_space::log_singletone::channel_enabled(log_channel))\
+  {TRY_ENTRY();std::stringstream ss________; ss________ << x << std::endl;epee::log_space::log_singletone::do_log_message(ss________.str(), y, color, false, log_name); cb(ss________.str());CATCH_ALL_DO_NOTHING();}}
+
+
 #define LOG_PRINT_CHANNEL_2_JORNAL(log_channel, log_name, x, y) {if ( (y) <= epee::log_space::log_singletone::get_log_detalisation_level() && epee::log_space::log_singletone::channel_enabled(log_channel))\
   {TRY_ENTRY();std::stringstream ss________; ss________ << epee::log_space::log_singletone::get_prefix_entry() << x << std::endl;epee::log_space::log_singletone::do_log_message(ss________.str(), y, epee::log_space::console_color_default, true, log_name);CATCH_ALL_DO_NOTHING();}}
 
@@ -147,6 +153,7 @@ DISABLE_VS_WARNINGS(4100)
 #define LOG_ERROR2(log_name, x) LOG_ERROR2_CB(log_name, x, epee::log_space::log_stub)
 #define LOG_PRINT_CHANNEL2(log_channel, log_name, x, y) LOG_PRINT_CHANNEL2_CB(log_channel, log_name, x, y, epee::log_space::log_stub)
 #define LOG_PRINT_CHANNEL_COLOR2(log_channel, log_name, x, y, color) LOG_PRINT_CHANNEL_COLOR2_CB(log_channel, log_name, x, y, color, epee::log_space::log_stub)
+#define LOG_PRINT_CHANNEL_COLOR2_NO_PREFIX(log_channel, log_name, x, y, color) LOG_PRINT_CHANNEL_COLOR2_CB_NO_PREFIX(log_channel, log_name, x, y, color, epee::log_space::log_stub)
 
 #define LOG_FRAME2(log_name, x, y) epee::log_space::log_frame frame(x, y, log_name)
 
@@ -169,6 +176,7 @@ DISABLE_VS_WARNINGS(4100)
 #define LOG_PRINT2(log_name, x, y)                              LOG_PRINT_CHANNEL2(LOG_DEFAULT_CHANNEL, log_name, x, y)
 #define LOG_PRINT2_CB(log_name, x, y, cb)                       LOG_PRINT_CHANNEL2_CB(LOG_DEFAULT_CHANNEL, log_name, x, y, cb)
 #define LOG_PRINT_COLOR2(log_name, x, y, color)                 LOG_PRINT_CHANNEL_COLOR2(LOG_DEFAULT_CHANNEL, log_name, x, y, color)
+#define LOG_PRINT_COLOR2_NO_PREFIX(log_name, x, y, color)       LOG_PRINT_CHANNEL_COLOR2_NO_PREFIX(LOG_DEFAULT_CHANNEL, log_name, x, y, color)
 #define LOG_PRINT_COLOR2_CB(log_name, x, y, color, cb)          LOG_PRINT_CHANNEL_COLOR2_CB(LOG_DEFAULT_CHANNEL, log_name, x, y, color, cb)
 #define LOG_PRINT2_JORNAL(log_name, x, y)                       LOG_PRINT_CHANNEL_2_JORNAL(LOG_DEFAULT_CHANNEL, log_name, x, y)
 
@@ -192,6 +200,9 @@ DISABLE_VS_WARNINGS(4100)
 #define LOG_COLOR_MAGENTA         epee::log_space::console_color_magenta
  
 #define LOG_PRINT_COLOR(mess, level, color)       LOG_PRINT_COLOR2(LOG_DEFAULT_TARGET, mess, level, color)
+#define LOG_PRINT_COLOR_NO_PREFIX(mess, level, color)       LOG_PRINT_COLOR2_NO_PREFIX(LOG_DEFAULT_TARGET, mess, level, color)
+
+
 #define LOG_PRINT_RED(mess, level)        LOG_PRINT_COLOR2(LOG_DEFAULT_TARGET, mess, level, LOG_COLOR_RED)
 #define LOG_PRINT_GREEN(mess, level)        LOG_PRINT_COLOR2(LOG_DEFAULT_TARGET, mess, level, LOG_COLOR_GREEN)
 #define LOG_PRINT_BLUE(mess, level)       LOG_PRINT_COLOR2(LOG_DEFAULT_TARGET, mess, level, LOG_COLOR_BLUE)
@@ -276,6 +287,22 @@ DISABLE_VS_WARNINGS(4100)
 #define CHECK_AND_ASSERT_GREATER(A, B) CHECK_AND_ASSERT_MES((A) > (B), false, STR(A) " <= " STR(B) " because " << A << " <= " << B)
 #endif
 
+#ifndef CHECK_AND_ASSERT_SUCCESS
+#define CHECK_AND_ASSERT_SUCCESS(A) CHECK_AND_ASSERT_MES((A), false, STR(A) " failed")
+#endif
+
+#ifndef CHECK_AND_ASSERT_FAILURE
+#define CHECK_AND_ASSERT_FAILURE(A) CHECK_AND_ASSERT_MES(!(A), false, STR(A) " succeeded, but was expected to fail")
+#endif
+
+#ifndef CHECK_AND_ASSERT_TRUE
+#define CHECK_AND_ASSERT_TRUE(A) CHECK_AND_ASSERT_MES((A), false, STR(A) " is false")
+#endif
+
+#ifndef CHECK_AND_ASSERT_FALSE
+#define CHECK_AND_ASSERT_FALSE(A) CHECK_AND_ASSERT_MES(!(A), false, STR(A) " is true")
+#endif
+
 namespace epee
 {
 namespace debug
@@ -320,6 +347,8 @@ namespace log_space
     virtual bool set_max_logfile_size(uint64_t max_size){return true;};
     virtual bool set_log_rotate_cmd(const std::string& cmd){return true;};
     virtual bool truncate_log_files() { return true; }
+    virtual bool get_log_files_size(uint64_t& size, const std::set<std::string>& additional_log_names) { size = 0; return true; }
+    virtual bool clear_log_files(const std::set<std::string>& additional_log_names) { return true; }
     virtual std::string copy_logs_to_buffer() { return ""; }
   };
 
@@ -558,11 +587,11 @@ namespace log_space
 #endif
 
   public:
-    console_output_stream()
+    console_output_stream(const bool no_alloc = false)
     {
 #ifdef _MSC_VER
 
-      if(!::GetStdHandle(STD_OUTPUT_HANDLE))
+      if (!no_alloc && !::GetStdHandle(STD_OUTPUT_HANDLE))
         m_have_to_kill_console = true;
       else
         m_have_to_kill_console = false;
@@ -730,6 +759,7 @@ namespace log_space
     {
       for (named_log_streams::iterator it = m_log_file_names.begin(); it != m_log_file_names.end(); it++)
       {
+        bool is_default = m_pdefault_file_stream == it->second.first;
         std::wstring target_path = it->second.second;
         //close and delete current stream
         if (it->second.first->is_open())
@@ -738,6 +768,10 @@ namespace log_space
           it->second.first->close();
         }
         delete it->second.first;
+        if (is_default)
+        {
+          m_pdefault_file_stream = nullptr;
+        }
         it->second.first = nullptr;
         //reopen it with truncate        
         boost::filesystem::ofstream* pstream = new boost::filesystem::ofstream;
@@ -747,8 +781,121 @@ namespace log_space
           throw std::runtime_error("Unexpected error: failed to re-open log stream on truncate");
         }
         it->second.first = pstream;
+        if (is_default)
+        {
+          m_pdefault_file_stream = pstream;
+        }
       }
       return true;
+    }
+
+    bool collect_additional_log_paths(const std::set<std::string>& additional_log_names, std::list<boost::filesystem::path>& paths)
+    {
+      bool success = true;
+      for (const auto& name : additional_log_names)
+      {
+        if (name.empty() || name == "." || name == ".." || name.find_first_of("/\\:") != std::string::npos || name.find('\0') != std::string::npos)
+        {
+          success = false;
+          continue;
+        }
+        if (m_log_file_names.count(name))
+          continue;
+        boost::filesystem::path target_path = boost::filesystem::path(m_default_log_path_w) / epee::string_encoding::utf8_to_wstring(name);
+        boost::system::error_code ec;
+        boost::filesystem::file_status status = boost::filesystem::status(target_path, ec);
+        if (status.type() == boost::filesystem::file_not_found)
+          continue;
+        if (ec || !boost::filesystem::is_regular_file(status))
+        {
+          success = false;
+          continue;
+        }
+        // a known name can refer to a registered file with different casing, so check for equivalence to avoid duplicates
+        bool skip_path = false;
+        for (const auto& entry : m_log_file_names)
+        {
+          bool already_registered = boost::filesystem::equivalent(target_path, boost::filesystem::path(entry.second.second), ec);
+          if (ec)
+          {
+            success = false;
+            skip_path = true;
+            break;
+          }
+          if (already_registered)
+          {
+            skip_path = true;
+            break;
+          }
+        }
+        if (!skip_path)
+          paths.push_back(target_path);
+      }
+      return success;
+    }
+
+    bool get_log_files_size(uint64_t& size, const std::set<std::string>& additional_log_names)
+    {
+      size = 0;
+      if (!m_pdefault_file_stream)
+        return false;
+      std::list<boost::filesystem::path> additional_paths;
+      if (!collect_additional_log_paths(additional_log_names, additional_paths))
+        return false;
+      uint64_t total_size = 0;
+      for (const auto& entry : m_log_file_names)
+      {
+        boost::system::error_code ec;
+        boost::uintmax_t file_size = boost::filesystem::file_size(boost::filesystem::path(entry.second.second), ec);
+        if (ec || file_size > (std::numeric_limits<uint64_t>::max)() - total_size)
+          return false;
+        total_size += file_size;
+      }
+      for (const auto& path : additional_paths)
+      {
+        boost::system::error_code ec;
+        boost::uintmax_t file_size = boost::filesystem::file_size(path, ec);
+        if (ec || file_size > (std::numeric_limits<uint64_t>::max)() - total_size)
+          return false;
+        total_size += file_size;
+      }
+      size = total_size;
+      return true;
+    }
+
+    bool clear_log_files(const std::set<std::string>& additional_log_names)
+    {
+      std::list<boost::filesystem::path> additional_paths;
+      bool success = collect_additional_log_paths(additional_log_names, additional_paths);
+      if (!m_pdefault_file_stream)
+        success = false;
+      for (const auto& entry : m_log_file_names)
+      {
+        boost::filesystem::path target_path(entry.second.second);
+        boost::filesystem::ofstream* pstream = entry.second.first;
+        if (!pstream)
+        {
+          success = false;
+          continue;
+        }
+
+        if (pstream->is_open())
+          pstream->close();
+        pstream->clear();
+        boost::system::error_code ec;
+        boost::filesystem::resize_file(target_path, 0, ec);
+        pstream->open(target_path, std::ios_base::out | std::ios_base::app);
+        if (ec || !pstream->is_open() || pstream->fail())
+          success = false;
+      }
+      for (const auto& path : additional_paths)
+      {
+        boost::system::error_code ec;
+        boost::filesystem::resize_file(path, 0, ec);
+        if (ec)
+          success = false;
+      }
+      return success;
     }
 
     std::string copy_logs_to_buffer()
@@ -887,6 +1034,32 @@ namespace log_space
       return true;
     }
 
+    bool get_log_files_size(uint64_t& size, const std::set<std::string>& additional_log_names)
+    {
+      size = 0;
+      uint64_t total_size = 0;
+      for (const auto& entry : m_log_streams)
+      {
+        uint64_t stream_size = 0;
+        if (!entry.first->get_log_files_size(stream_size, additional_log_names) || stream_size > (std::numeric_limits<uint64_t>::max)() - total_size)
+          return false;
+        total_size += stream_size;
+      }
+      size = total_size;
+      return true;
+    }
+
+    bool clear_log_files(const std::set<std::string>& additional_log_names)
+    {
+      bool success = true;
+      for (const auto& entry : m_log_streams)
+      {
+        if (!entry.first->clear_log_files(additional_log_names))
+          success = false;
+      }
+      return success;
+    }
+
     std::string copy_logs_to_buffer()
     {
       std::string res;
@@ -932,6 +1105,9 @@ namespace log_space
         break;
       case LOGGER_CONSOLE:
         ls = new console_output_stream( );
+        break;
+      case LOGGER_CONSOLE_NO_ALLOC:
+        ls = new console_output_stream(true);
         break;
       }
 
@@ -1080,6 +1256,18 @@ namespace log_space
       FAST_CRITICAL_REGION_BEGIN(m_critical_sec);
       return m_log_target.truncate_log_files();
       FAST_CRITICAL_REGION_END();
+    }
+
+    bool get_log_files_size(uint64_t& size, const std::set<std::string>& additional_log_names)
+    {
+      FAST_CRITICAL_REGION_LOCAL(m_critical_sec);
+      return m_log_target.get_log_files_size(size, additional_log_names);
+    }
+
+    bool clear_log_files(const std::set<std::string>& additional_log_names)
+    {
+      FAST_CRITICAL_REGION_LOCAL(m_critical_sec);
+      return m_log_target.clear_log_files(additional_log_names);
     }
 
     bool take_away_journal(std::list<std::string>& journal)
@@ -1387,6 +1575,21 @@ namespace log_space
       logger* plogger = get_or_create_instance();
       if (!plogger) return false;
       return plogger->truncate_log_files();
+    }
+
+    static bool get_log_files_size(uint64_t& size, const std::set<std::string>& additional_log_names = {})
+    {
+      size = 0;
+      logger* plogger = get_or_create_instance();
+      if (!plogger) return false;
+      return plogger->get_log_files_size(size, additional_log_names);
+    }
+
+    static bool clear_log_files(const std::set<std::string>& additional_log_names = {})
+    {
+      logger* plogger = get_or_create_instance();
+      if (!plogger) return false;
+      return plogger->clear_log_files(additional_log_names);
     }
 
 
@@ -1777,6 +1980,6 @@ POP_GCC_WARNINGS
 
 }  // namespace epee
 
-POP_WARNINGS
+POP_VS_WARNINGS
 
 #endif //_MISC_LOG_EX_H_

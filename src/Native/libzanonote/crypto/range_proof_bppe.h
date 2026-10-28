@@ -74,9 +74,9 @@ namespace crypto
     for (size_t i = 0; i < values.size(); ++i)
     {
       const scalar_t& v = values[i];
-      for (uint8_t j = 0; j < CT::c_bpp_n; ++j)
+      for (size_t j = 0; j < CT::c_bpp_n; ++j)
       {
-        if (v.get_bit(j))
+        if (v.get_bit(static_cast<uint8_t>(j)))
           aLs(i, j) = c_scalar_1;    // aL = 1, aR = 0
         else
           aRs(i, j) = c_scalar_Lm1;  // aL = 0, aR = -1

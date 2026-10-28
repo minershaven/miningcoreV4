@@ -34,12 +34,13 @@ namespace epee
   namespace serialization
   {
     //-----------------------------------------------------------------------------------------------------------
+
     template<class t_struct>
     bool load_t_from_json(t_struct& out, const std::string& json_buff)
     {
       portable_storage ps;
       bool rs = ps.load_from_json(json_buff);
-      if(!rs)
+      if (!rs)
         return false;
 
       return out.load(ps);
@@ -81,14 +82,20 @@ namespace epee
     }
     //-----------------------------------------------------------------------------------------------------------
     template<class t_struct>
-    bool load_t_from_binary(t_struct& out, const std::string& binary_buff)
+    bool load_t_from_binary(t_struct& out, const std::string& binary_buff, const portable_storage_limits& limits)
     {
       portable_storage ps;
-      bool rs = ps.load_from_binary(binary_buff);
-      if(!rs)
+      bool rs = ps.load_from_binary(binary_buff, limits);
+      if (!rs)
         return false;
 
       return out.load(ps);
+    }
+    //-----------------------------------------------------------------------------------------------------------
+    template<class t_struct>
+    bool load_t_from_binary(t_struct& out, const std::string& binary_buff)
+    {
+      return load_t_from_binary(out, binary_buff, gdefault_portable_storage_limits);
     }
     //-----------------------------------------------------------------------------------------------------------
     template<class t_struct>
@@ -101,7 +108,7 @@ namespace epee
       return load_t_from_binary(out, f_buff);
     }
     //-----------------------------------------------------------------------------------------------------------
-PUSH_WARNINGS
+PUSH_VS_WARNINGS
 DISABLE_VS_WARNINGS(4100)
     template<class t_struct>
     bool store_t_to_binary(const t_struct& str_in, std::string& binary_buff, size_t indent = 0)
@@ -110,7 +117,7 @@ DISABLE_VS_WARNINGS(4100)
       str_in.store(ps);
       return ps.store_to_binary(binary_buff);
     }
-POP_WARNINGS
+POP_VS_WARNINGS
     //-----------------------------------------------------------------------------------------------------------
     template<class t_struct>
     std::string store_t_to_binary(const t_struct& str_in, size_t indent = 0)

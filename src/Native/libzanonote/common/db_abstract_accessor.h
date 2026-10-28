@@ -14,7 +14,7 @@
 #include "misc_language.h"
 #include "cache_helper.h"
 #include "profile_tools.h"
-#include "serialization/serialization.h"
+#include "../serialization/serialization.h"
 #include "readwrite_lock.h"
 #include "math_helper.h"
 
@@ -45,7 +45,7 @@ namespace tools
       static_assert(std::is_pod<t_pod_key>::value, "t_pod_key must be a POD type.");
       CHECK_AND_ASSERT_THROW_MES(sizeof(t_pod_key) == ks, "size missmatch");
       CHECK_AND_ASSERT_THROW_MES(pkey, "wrog ptr(null)");
-      k = *(t_pod_key*)pkey;
+      std::memcpy(std::addressof(k), pkey, sizeof(t_pod_key));//k = *(t_pod_key*)pkey;
     }
     inline
     void key_from_ptr(std::string& k, const void* pkey, uint64_t ks)
@@ -68,8 +68,8 @@ namespace tools
     class basic_db_accessor
     {
       std::shared_ptr<i_db_backend> m_backend;
-      epee::critical_section m_binded_containers_lock;
-      std::set<i_db_parent_to_container_callabck*> m_binded_containers;
+      epee::critical_section m_bound_containers_lock;
+      std::set<i_db_parent_to_container_callabck*> m_bound_containers;
 
       epee::critical_section m_transactions_stack_lock;
       std::map<std::thread::id, std::vector<bool> > m_transactions_stack;
@@ -85,6 +85,9 @@ namespace tools
         epee::math_helper::average<uint64_t, 10> backend_get_t_time;
         epee::math_helper::average<uint64_t, 10> get_serialize_t_time;
       };
+
+      typedef db_transaction_wrapper<basic_db_accessor> db_tx_obj;
+      typedef std::shared_ptr<db_tx_obj> db_tx_ptr;
     private:
       mutable performance_data m_gperformance_data;
       mutable std::unordered_map<container_handle, performance_data> m_performance_data_map;
@@ -105,17 +108,17 @@ namespace tools
 
       bool bind_parent_container(i_db_parent_to_container_callabck* pcontainer)
       {
-        CRITICAL_REGION_LOCAL(m_binded_containers_lock);
-        m_binded_containers.insert(pcontainer);        
+        CRITICAL_REGION_LOCAL(m_bound_containers_lock);
+        m_bound_containers.insert(pcontainer);        
         return true;
       }
 
       bool unbind_parent_container(i_db_parent_to_container_callabck* pcontainer)
       {
-        CRITICAL_REGION_LOCAL(m_binded_containers_lock);
-        auto it = m_binded_containers.find(pcontainer);
-        CHECK_AND_ASSERT_THROW_MES(it != m_binded_containers.end(), "Unable to unbind pointer");
-        m_binded_containers.erase(it);
+        CRITICAL_REGION_LOCAL(m_bound_containers_lock);
+        auto it = m_bound_containers.find(pcontainer);
+        CHECK_AND_ASSERT_THROW_MES(it != m_bound_containers.end(), "Unable to unbind pointer");
+        m_bound_containers.erase(it);
         return true;
       }
       bool has_writer_tx_in_stack(const std::vector<bool>& ve)
@@ -140,7 +143,7 @@ namespace tools
           if (need_to_brodcst_writer_tx && !readonly)
           {
             LOG_PRINT_CYAN("[WRITE_TX_BEGIN]", LOG_LEVEL_2);
-            for (auto cnt_ptr : m_binded_containers)
+            for (auto cnt_ptr : m_bound_containers)
             {
               cnt_ptr->on_write_transaction_begin();
             }
@@ -149,9 +152,29 @@ namespace tools
         return r;
       }
 
+      std::shared_ptr<db_tx_obj> begin_transaction_obj(bool readonly = false)
+      {   
+        std::shared_ptr<db_tx_obj> tx_tr(new db_tx_obj(*this));
+
+        bool r = tx_tr->begin_transaction(readonly);
+        if (r)
+        {          
+          return tx_tr;
+        }
+        else
+        {
+          return std::shared_ptr<db_tx_obj>();
+        }        
+      }
+
       bool begin_readonly_transaction()const
       {
         return const_cast<basic_db_accessor&>(*this).begin_transaction(true);
+      }
+
+      std::shared_ptr<db_tx_obj> begin_readonly_transaction_obj()const
+      {
+        return const_cast<basic_db_accessor&>(*this).begin_transaction_obj(true);
       }
 
       void commit_transaction()const
@@ -184,7 +207,7 @@ namespace tools
           if (is_writer_tx && !has_other_writers_on_stack)
           {
             LOG_PRINT_CYAN("[WRITE_TX_COMMIT]", LOG_LEVEL_2);
-            for (auto cnt_ptr : m_binded_containers)
+            for (auto cnt_ptr : m_bound_containers)
             {
               cnt_ptr->on_write_transaction_commit(); // will cause cache isolation to be switched off
             }
@@ -203,7 +226,7 @@ namespace tools
           CRITICAL_REGION_LOCAL(m_transactions_stack_lock);
           std::vector<bool>& this_thread_tx_stack = m_transactions_stack[std::this_thread::get_id()];
           CHECK_AND_ASSERT_THROW_MES(this_thread_tx_stack.size(), "Internal error: this_thread_tx_stack.size = 0 at abort tx");
-          CHECK_AND_ASSERT_THROW_MES(!this_thread_tx_stack.back(), "Internal error: abort on readonly tx");
+          //CHECK_AND_ASSERT_THROW_MES(!this_thread_tx_stack.back(), "Internal error: abort on readonly tx");
           is_writer_tx = !this_thread_tx_stack.back();
         }
         if (is_writer_tx)
@@ -215,13 +238,13 @@ namespace tools
 
           std::vector<bool>& this_thread_tx_stack = m_transactions_stack[std::this_thread::get_id()];
           CHECK_AND_ASSERT_THROW_MES(this_thread_tx_stack.size(), "Internal error: this_thread_tx_stack.size = 0 at abort tx");
-          CHECK_AND_ASSERT_THROW_MES(!this_thread_tx_stack.back(), "Internal error: abort on readonly tx");
+          //CHECK_AND_ASSERT_THROW_MES(!this_thread_tx_stack.back(), "Internal error: abort on readonly tx");
           this_thread_tx_stack.pop_back();
           bool has_other_writers_on_stack = has_writer_tx_in_stack(this_thread_tx_stack);
-          if (!has_other_writers_on_stack)
+          if (is_writer_tx && !has_other_writers_on_stack)
           {
             LOG_PRINT_CYAN("[WRITE_TX_ABORT]", LOG_LEVEL_2);
-            for (auto cnt_ptr : m_binded_containers)
+            for (auto cnt_ptr : m_bound_containers)
             {
               cnt_ptr->on_write_transaction_abort(); // will cause cache isolation to be switched off
             }
@@ -346,7 +369,7 @@ namespace tools
         CHECK_AND_ASSERT_MES(sizeof(t_pod_object) == res_buff.size(), false, "sizes missmath at get_pod_object_from_db(). returned size = "
           << res_buff.size() << "expected: " << sizeof(t_pod_object));
 
-        obj = *(t_pod_object*)res_buff.data();
+        std::memcpy(std::addressof(obj), res_buff.data(), sizeof(t_pod_object));//obj = *(t_pod_object*)res_buff.data();
         return true;
         //CATCH_ENTRY_L0("get_t_object_from_db", false);
       }
@@ -382,7 +405,7 @@ namespace tools
         CHECK_AND_ASSERT_THROW_MES(sizeof(t_value) == vs, "sizes missmath at get_pod_object_from_db(). returned size = " 
           << vs << "expected: " << sizeof(t_value));
 
-        v = *(t_value*)pv;
+        std::memcpy(std::addressof(v), pv, sizeof(t_value)); //v = *(t_value*)pv;
 
         return true;
       }
@@ -565,6 +588,9 @@ namespace tools
         bdb.abort_transaction();
       }
 
+      basic_db_accessor& get_db_accessor() { return bdb; }
+      const basic_db_accessor& get_db_accessor() const { return bdb; }
+
       bool init(const std::string& container_name)
       {
 #ifdef ENABLE_PROFILING
@@ -609,6 +635,13 @@ namespace tools
       {
         items_accessor_cb<t_cb, t_key, t_value, access_strategy_selector<is_t_access_strategy> > local_enum_handler(cb);
         bdb.get_backend()->enumerate(m_h, &local_enum_handler);
+      }
+
+      template<class t_cb>
+      void enumerate_items_by_prefix(const std::string& prefix, uint64_t limit, t_cb cb) const
+      {
+        items_accessor_cb<t_cb, t_key, t_value, access_strategy_selector<is_t_access_strategy>> local_enum_handler(cb);
+        bdb.get_backend()->enumerate_prefix(m_h, prefix, limit, &local_enum_handler);
       }
 
       template<class t_explicit_key, class t_explicit_value, class t_strategy>
@@ -761,12 +794,27 @@ namespace tools
         NESTED_CATCH_ENTRY(__func__);
       }
 
+      const cache_container_type& get_cache_obj() const
+      {
+        return m_cache;
+      }
+
       void clear_cache() const 
       {
         m_cache.clear();
       }
 
-      void set_cache_size(uint64_t max_cache_size)
+      uint64_t get_cacheed_items_count() const
+      {
+        return m_cache.size();
+      }
+
+      uint64_t get_cache_size() const
+      {
+        return m_cache.get_max_elements();
+      }
+
+      void set_cache_size(uint64_t max_cache_size) const
       {
         m_cache.set_max_elements(max_cache_size);
       }
@@ -805,6 +853,11 @@ namespace tools
           TIME_MEASURE_FINISH_PD(update_cache_microsec);
         }          
         return res;
+      }
+     
+      std::shared_ptr<const t_value> find(const t_key& k) const
+      {
+        return get(k);
       }
 
       size_t clear()
@@ -911,6 +964,19 @@ namespace tools
 //     {};
 #pragma pack(pop)
 
+    template<class t_key_a, class t_key_b>
+    inline bool operator==(const composite_key<t_key_a, t_key_b>& lhs, const composite_key<t_key_a, t_key_b>& rhs)
+    {
+      return lhs.container_id == rhs.container_id && lhs.sufix == rhs.sufix;
+    }
+
+    template<class t_key_a, class t_key_b>
+    inline bool operator!=(const composite_key<t_key_a, t_key_b>& lhs, const composite_key<t_key_a, t_key_b>& rhs)
+    {
+      return !(lhs == rhs);
+    }
+
+
     /************************************************************************/
     /*                                                                      */
     /************************************************************************/
@@ -992,14 +1058,14 @@ namespace tools
       }
 
       void pop_back_item(const t_key& k)
-      { 
+      {
         auto counter = get_counter_accessor(k);
         uint64_t sz = static_cast<uint64_t>(counter);
 
         CHECK_AND_ASSERT_MES(sz != 0, void(), "pop_back_item called on empty subitem");
-        
+
         composite_key<t_key, uint64_t> ck{ k, sz - 1 };
-        this->erase(ck);
+          this->erase(ck);
         counter = --sz;
       }
 
@@ -1025,6 +1091,257 @@ namespace tools
         subitems_visitor<callback_t> visitor(callback);
         basic_accessor_type::bdb.get_backend()->enumerate(basic_accessor_type::m_h, &visitor);
       }
+
+    };
+
+
+    /************************************************************************
+
+      This class is meant to provide trade-off solution for cases when we need to keep arrays of items by key, but don't
+      want to have overhead of space when using keys like hash+index for each item. It uses solo_db_value with guid_key 
+      suffix to keep items count and composite_key of key+index as key for each "chunk"
+
+    ************************************************************************/
+
+    template<class t_key, class t_value, bool is_t_access_strategy, size_t chunk_size>
+    class chunked_key_to_array_accessor : public cached_key_value_accessor<composite_key<t_key, uint64_t>, std::vector<t_value>, true, false>
+    {
+      typedef cached_key_value_accessor<composite_key<t_key, uint64_t>, std::vector<t_value>, true, false> basic_accessor_type;
+
+
+      solo_db_value<composite_key<t_key, guid_key>, uint64_t, basic_accessor_type>
+        get_counter_accessor(const t_key& container_id)
+      {
+        static_assert(std::is_pod<t_key>::value, "t_pod_key must be a POD type.");
+        composite_key<t_key, guid_key> cc = { container_id, const_counter_suffix };
+
+        return solo_db_value<composite_key<t_key, guid_key>, uint64_t, basic_accessor_type >(cc, *this);
+      }
+
+      const solo_db_value<composite_key<t_key, guid_key>, uint64_t, basic_accessor_type >
+        get_counter_accessor(const t_key& container_id) const
+      {
+        static_assert(std::is_pod<t_key>::value, "t_pod_key must be a POD type.");
+        composite_key<t_key, guid_key> cc = { container_id, const_counter_suffix };
+
+        return solo_db_value<composite_key<t_key, guid_key>, uint64_t, basic_accessor_type >(cc, const_cast<basic_accessor_type&>(static_cast<const basic_accessor_type&>(*this)));
+      }
+
+      /*
+      template<typename callback_t>
+      struct subitems_visitor : public i_db_callback
+      {
+        subitems_visitor(callback_t cb)
+          : m_callback(cb)
+        {
+        }
+
+        virtual bool on_enum_item(uint64_t i, const void* key_data, uint64_t key_size, const void* value_data, uint64_t value_size) override
+        {
+          if (key_size != sizeof(composite_key<t_key, uint64_t>))
+            return true; // skip solo values containing items size
+
+          composite_key<t_key, uint64_t> key = AUTO_VAL_INIT(key);
+          key_from_ptr(key, key_data, key_size);
+
+          std::vector<t_value> vec_of_values = AUTO_VAL_INIT(vec_of_values);
+          access_strategy_selector<is_t_access_strategy>::from_buff_to_obj(value_data, value_size, vec_of_values);
+
+          size_t offset = i * chunk_size;
+          size_t index = 0;
+          for (const auto& value : vec_of_values)
+          {
+            if (!m_callback(offset + index++, key.container_id, key.sufix, value))
+              return false;
+          }
+
+          return true;
+        }
+
+        callback_t m_callback;
+      };*/
+
+
+      uint64_t get_chunk_index(uint64_t index, uint64_t& index_in_chunk) const
+      {
+        index_in_chunk = index % chunk_size;
+        return index / chunk_size;
+      }
+
+    public:
+      chunked_key_to_array_accessor(basic_db_accessor& db) : basic_accessor_type(db)
+      {
+      }
+
+      uint64_t get_item_size(const t_key& k) const
+      {
+        return get_counter_accessor(k);
+      }
+
+      std::shared_ptr<const std::vector<t_value>> get_chunk(const t_key& k, uint64_t chunk_index) const
+      {
+        composite_key<t_key, uint64_t> ck{ k, chunk_index };
+        auto chunk_ptr = this->get(ck);
+        if (!chunk_ptr)
+        {
+          LOG_ERROR("Out of bound access: chunk_index = " << chunk_index);
+          throw std::out_of_range("In basic_key_to_array_accessor");
+        }
+        return chunk_ptr;
+      }
+
+      void set_chunk(const t_key& k, uint64_t chunk_index, const std::vector<t_value>& new_chunk)
+      {
+        composite_key<t_key, uint64_t> ck{ k, chunk_index };
+        this->set(ck, new_chunk);
+      }
+
+      std::shared_ptr<const t_value> get_subitem(const t_key& k, uint64_t i) const
+      {
+        if (i >= get_item_size(k))
+        {
+          LOG_ERROR("Out of bound access: itmes_count = " << get_item_size(k) << ", i = " << i);
+          throw std::out_of_range("In basic_key_to_array_accessor");
+        }
+
+        uint64_t index_inside_chunk = 0;
+        uint64_t chunk_index = get_chunk_index(i, index_inside_chunk);
+
+        auto chunk_ptr = get_chunk(k, chunk_index);
+
+        //now we have chunk, need to get item inside chunk
+        if (index_inside_chunk >= chunk_ptr->size())
+        {
+          LOG_ERROR("Out of bound access: index_inside_chunk = " << index_inside_chunk << ", chunk_size = " << chunk_ptr->size());
+          throw std::out_of_range("In basic_key_to_array_accessor");
+        }
+
+        return std::shared_ptr<const t_value>(new t_value((*chunk_ptr)[index_inside_chunk]));
+      }
+
+      bool get_subitems(const t_key& k, uint64_t offset, uint64_t count, std::vector<t_value>& res) const
+      {
+        res.clear();
+        res.reserve(count);
+
+        if (count == 0)
+          return true;
+
+        if (offset + count > get_item_size(k))
+        {
+          LOG_ERROR("Out of bound access: itmes_count = " << get_item_size(k) << ", offset = " << offset);
+          throw std::out_of_range("In basic_key_to_array_accessor");
+        }
+
+        std::shared_ptr<const std::vector<t_value>> current_chunk_ptr;
+        size_t current_chunk_ptr_index = 0;
+
+        size_t local_count = 0;
+        while (local_count < count)
+        {
+          uint64_t index_inside_chunk = 0;
+          uint64_t chunk_index = get_chunk_index(offset + local_count, index_inside_chunk);
+          if (!current_chunk_ptr || current_chunk_ptr_index != chunk_index)
+          {
+            current_chunk_ptr = get_chunk(k, chunk_index);
+            current_chunk_ptr_index = chunk_index;
+          }
+          res.push_back(current_chunk_ptr->at(index_inside_chunk));
+          local_count++;
+        }
+
+        return true;
+      }
+
+      void push_back_item(const t_key& k, const t_value& v)
+      {
+        auto counter = get_counter_accessor(k);
+        uint64_t new_index = counter;
+
+        uint64_t index_inside_chunk = 0;
+        uint64_t chunk_index = get_chunk_index(new_index, index_inside_chunk);
+
+        if (index_inside_chunk == 0)
+        {
+          //this is new chunk
+          std::vector<t_value> tmp;
+          tmp.push_back(v);
+          set_chunk(k, chunk_index, tmp);
+        }
+        else
+        {
+          //existing chunk
+          auto chunk_ptr = get_chunk(k, chunk_index);
+          std::vector<t_value> new_chunk = *chunk_ptr;
+          new_chunk.push_back(v);
+          if (index_inside_chunk != new_chunk.size() - 1)
+          {
+            LOG_ERROR("Intenral error: itmes_count = " << index_inside_chunk << " != chunk_ptr->size() - 1" << new_chunk.size() - 1);
+            throw std::out_of_range("Internal error");
+          }
+          set_chunk(k, chunk_index, new_chunk);
+        }
+        counter = new_index + 1;
+      }
+
+      void pop_back_item(const t_key& k)
+      {
+        auto counter = get_counter_accessor(k);
+        uint64_t sz = static_cast<uint64_t>(counter);
+
+        CHECK_AND_ASSERT_MES(sz != 0, void(), "pop_back_item called on empty subitem");
+
+        uint64_t last_index = sz - 1;
+        uint64_t index_inside_chunk = 0;
+        uint64_t chunk_index = get_chunk_index(last_index, index_inside_chunk);
+
+        if (index_inside_chunk == 0)
+        {
+          // last item is the first element in the chunk, so drop the whole chunk
+          composite_key<t_key, uint64_t> ck{ k, chunk_index };
+          this->erase(ck);
+        }
+        else
+        {
+          auto chunk_ptr = get_chunk(k, chunk_index);
+          CHECK_AND_ASSERT_MES(chunk_ptr && index_inside_chunk < chunk_ptr->size(), void(), "pop_back_item: index inside chunk is out of range");
+          std::vector<t_value> new_chunk = *chunk_ptr;
+          new_chunk.pop_back();
+          set_chunk(k, chunk_index, new_chunk);
+        }
+
+        counter = last_index;
+      }
+
+      // removes all items by key k
+      void erase_items(const t_key& k)
+      {
+        auto counter = get_counter_accessor(k);
+        uint64_t sz = static_cast<uint64_t>(counter);
+
+        if (sz == 0)
+          return;
+
+        uint64_t last_index = sz - 1;
+        uint64_t index_inside_chunk = 0;
+        uint64_t last_chunk_index = get_chunk_index(last_index, index_inside_chunk);
+
+        for (uint64_t chunk_index = 0; chunk_index <= last_chunk_index; ++chunk_index)
+        {
+          composite_key<t_key, uint64_t> ck{ k, chunk_index };
+          this->erase(ck);
+        }
+
+        counter = 0;
+      }
+
+      /*
+      template<typename callback_t>
+      void enumerate_subitems(callback_t callback) const
+      {
+        subitems_visitor<callback_t> visitor(callback);
+        basic_accessor_type::bdb.get_backend()->enumerate(basic_accessor_type::m_h, &visitor);
+      }*/
 
     };
 
@@ -1101,6 +1418,23 @@ namespace tools
 
   }
 }
+
+namespace std
+{
+  template<class t_key_a, class t_key_b>
+  struct hash<tools::db::composite_key<t_key_a, t_key_b>>
+  {
+    size_t operator()(const tools::db::composite_key<t_key_a, t_key_b>& v) const
+      noexcept(noexcept(hash<t_key_a>{}(v.container_id)) && noexcept(hash<t_key_b>{}(v.sufix)))
+    {
+      const size_t h1 = hash<t_key_a>{}(v.container_id);
+      const size_t h2 = hash<t_key_b>{}(v.sufix);
+      return h1 ^ (h2 + static_cast<size_t>(0x9e3779b97f4a7c15ULL) + (h1 << 6) + (h1 >> 2));
+    }
+  };
+}
+
+
 
 #undef LOG_DEFAULT_CHANNEL 
 #define LOG_DEFAULT_CHANNEL NULL

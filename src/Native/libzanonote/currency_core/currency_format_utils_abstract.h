@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019 Zano Project
+// Copyright (c) 2018-2026 Zano Project
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <list>
 #include <memory>
+#include <type_traits>
 
 
 #include "include_base_utils.h"
@@ -200,21 +201,15 @@ namespace currency
   {
     try
     {
-      if (in_v.type() == typeid(txin_to_key))
-      {
-        result = boost::get<txin_to_key>(in_v).k_image;
-        return true;
-      }
-    
-      if (in_v.type() == typeid(txin_htlc))
-      {
-        result = boost::get<txin_htlc>(in_v).k_image;
-        return true;
-      }
-
       if (in_v.type() == typeid(txin_zc_input))
       {
         result = boost::get<txin_zc_input>(in_v).k_image;
+        return true;
+      }
+
+      if (in_v.type() == typeid(txin_to_key))
+      {
+        result = boost::get<txin_to_key>(in_v).k_image;
         return true;
       }
     }
@@ -229,30 +224,24 @@ namespace currency
   inline
   const crypto::key_image& get_key_image_from_txin_v(const txin_v& in_v)
   {
-    if (in_v.type() == typeid(txin_to_key))
-      return boost::get<txin_to_key>(in_v).k_image;
-    
-    if (in_v.type() == typeid(txin_htlc))
-      return boost::get<txin_htlc>(in_v).k_image;
-
     if (in_v.type() == typeid(txin_zc_input))
       return boost::get<txin_zc_input>(in_v).k_image;
 
+    if (in_v.type() == typeid(txin_to_key))
+      return boost::get<txin_to_key>(in_v).k_image;
+    
     CHECK_AND_ASSERT_THROW_MES(false, "[get_key_image_from_txin_v] Wrong type: " << in_v.type().name());
   }
   //---------------------------------------------------------------
   inline
   const std::vector<currency::txout_ref_v>& get_key_offsets_from_txin_v(const txin_v& in_v)
   {
-    if (in_v.type() == typeid(txin_to_key))
-      return boost::get<txin_to_key>(in_v).key_offsets;
-    
-    if (in_v.type() == typeid(txin_htlc))
-      return boost::get<txin_htlc>(in_v).key_offsets;
-
     if (in_v.type() == typeid(txin_zc_input))
       return boost::get<txin_zc_input>(in_v).key_offsets;
 
+    if (in_v.type() == typeid(txin_to_key))
+      return boost::get<txin_to_key>(in_v).key_offsets;
+    
     CHECK_AND_ASSERT_THROW_MES(false, "[get_key_offsets_from_txin_v] Wrong type: " << in_v.type().name());
   }
   //---------------------------------------------------------------
@@ -285,7 +274,40 @@ namespace currency
     return false;
   }
   //---------------------------------------------------------------
-  //, txin_htlc, txin_zc_input
+  inline
+  bool get_out_pub_key_from_tx_out_v(const tx_out_v& out_v, crypto::public_key& result) noexcept
+  {
+    try
+    {
+      if (out_v.type() == typeid(tx_out_bare))
+      {
+        const txout_target_v& target_v = boost::get<tx_out_bare>(out_v).target;
+        if (target_v.type() == typeid(txout_to_key))
+        {
+          result = boost::get<txout_to_key>(target_v).key;
+          return true;
+        }
+      }
+      
+      if (out_v.type() == typeid(tx_out_zarcanum))
+      {
+        result = boost::get<tx_out_zarcanum>(out_v).stealth_address;
+        return true;
+      }
+    }
+    catch(...)
+    {
+      // should never go here, just precaution
+    }
+
+    return false;
+  }
+  //---------------------------------------------------------------
+  inline bool compare_variant_by_types(const txin_gateway& left, const txin_gateway& right)
+  {
+    return (left.gateway_addr < right.gateway_addr);
+  }
+  //---------------------------------------------------------------
   inline bool compare_variant_by_types(const txin_multisig& left, const txin_multisig& right)
   {
     return (left.multisig_out_id < right.multisig_out_id);
@@ -293,7 +315,7 @@ namespace currency
   //---------------------------------------------------------------
   inline bool compare_variant_by_types(const txin_gen& left, const txin_gen& right)
   {
-    //actually this should never happen, should we leave it in case it happen in unit tests? @sowle 
+    //actually this should never happen, should we` leave it in case it happen in unit tests? @sowle 
     return (left.height < right.height);
   }
   //---------------------------------------------------------------
@@ -445,9 +467,20 @@ namespace currency
   }
   //---------------------------------------------------------------
 
+  template<typename T>
+  bool assign_add_with_overflow_check(const T& value, T& result)
+  {
+    static_assert(std::is_integral<T>::value && std::is_unsigned<T>::value, "only unsigned integrals, please");
+    if (result + value < result)
+      return false;
+
+    result += value;
+    return true;
+  }
+
   //---------------------------------------------------------------
   size_t get_object_blobsize(const transaction& t);
-  size_t get_object_blobsize(const transaction& t, uint64_t prefix_blob_size);
+  size_t get_object_blobsize_legacy(const transaction& t, uint64_t prefix_blob_size);
 
 
   inline

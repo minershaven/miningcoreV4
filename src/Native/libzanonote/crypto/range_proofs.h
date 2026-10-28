@@ -4,7 +4,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 #pragma once
 
-#include "misc_log_ex.h"
+#include "epee/include/misc_log_ex.h"
 #include "crypto-sugar.h"
 
 namespace crypto
@@ -140,7 +140,7 @@ namespace crypto
 
 } // namespace crypto
 
-//#include "profile_tools.h" // <- remove this, sowle
+#include "epee/include/profile_tools.h" // <- remove this, sowle
 
 #include "msm.h"
 #include "range_proof_bpp.h"

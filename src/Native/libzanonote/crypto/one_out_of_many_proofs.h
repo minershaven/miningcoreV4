@@ -1,5 +1,5 @@
-// Copyright (c) 2023 Zano Project
-// Copyright (c) 2023 sowle (val@zano.org, crypto.sowle@gmail.com)
+// Copyright (c) 2023-2026 Zano Project
+// Copyright (c) 2023-2026 sowle (val@zano.org, crypto.sowle@gmail.com)
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 //
@@ -30,18 +30,18 @@ namespace crypto
 
   struct BGE_proof
   {
-    crypto::public_key A;                  // premultiplied by 1/8
-    crypto::public_key B;                  // premultiplied by 1/8
-    std::vector<crypto::public_key> Pk;    // premultiplied by 1/8, size = m
+    public_key A;                  // premultiplied by 1/8
+    public_key B;                  // premultiplied by 1/8
+    std::vector<public_key> Pk;    // premultiplied by 1/8, size = m
     scalar_vec_t f;                // size = m * (n - 1)
     scalar_t y;
     scalar_t z;
   };
 
-  bool generate_BGE_proof(const crypto::hash& context_hash, const std::vector<point_t>& ring, const scalar_t& secret, const size_t secret_index, BGE_proof& result, uint8_t* p_err = nullptr);
+  bool generate_BGE_proof(const hash& context_hash, const std::vector<point_t>& ring, const scalar_t& secret, const size_t secret_index, BGE_proof& result, uint8_t* p_err = nullptr);
 
 
-  bool verify_BGE_proof(const crypto::hash& context_hash, const std::vector<const crypto::public_key*>& ring, const BGE_proof& sig, uint8_t* p_err = nullptr);
+  bool verify_BGE_proof(const hash& context_hash, const std::vector<const public_key*>& ring, const BGE_proof& sig, uint8_t* p_err = nullptr) noexcept;
 
 
 } // namespace crypto

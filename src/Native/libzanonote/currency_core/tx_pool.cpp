@@ -12,7 +12,7 @@
 #include "common/db_backend_selector.h"
 #include "tx_pool.h"
 #include "currency_boost_serialization.h"
-#include "currency_config.h"
+#include "currency_core/currency_config.h"
 #include "blockchain_storage.h"
 #include "common/boost_serialization_helper.h"
 #include "common/int-util.h"
@@ -93,7 +93,7 @@ namespace currency
     return true;
   }
   //---------------------------------------------------------------------------------
-  bool tx_memory_pool::check_tx_fee(const transaction &tx, uint64_t amount_fee)
+  bool tx_memory_pool::check_tx_fee(const transaction &tx, uint64_t amount_fee) const
   {
     if (amount_fee < m_blockchain.get_core_runtime_config().tx_pool_min_fee)
       return false;
@@ -134,6 +134,17 @@ namespace currency
       return false;
     }
 
+    if (!kept_by_block && !from_core && m_db_transactions.size() > CURRENCY_MEMPOOL_MAX_TX_COUT)
+    {
+      LOG_PRINT_L0("Tx pool has reached its maximum capacity (" << m_db_transactions.size() << " txs), new transaction " << id << " rejected");
+      tvc.m_added_to_pool = false;
+      tvc.m_should_be_relayed = false;
+      tvc.m_verification_failed = false;
+      tvc.m_error_code = API_RETURN_CODE_TX_POOL_FULL;
+      return false;
+    }
+
+
     r = m_blockchain.validate_tx_for_hardfork_specific_terms(tx, id);
     CHECK_AND_ASSERT_MES(r, false, "Transaction " << id <<" doesn't fit current hardfork");
 
@@ -158,19 +169,14 @@ namespace currency
 
 
     TIME_MEASURE_START_PD(validate_amount_time);
-    CHECK_AND_ASSERT_MES(tx.vout.size() <= CURRENCY_TX_MAX_ALLOWED_OUTS, false, "transaction has too many outs = " << tx.vout.size());
+
+    r = check_inputs_and_outputs_size(tx);
+    CHECK_AND_ASSERT_MES(r, false, "check_inputs_and_outputs_size failed, tx rejected");
 
     uint64_t tx_fee = 0;
     r = get_tx_fee(tx, tx_fee);
     CHECK_AND_ASSERT_MES(r, false, "get_tx_fee failed");
 
-    // @#@# consider removing the following
-    //if (!check_tx_balance(tx)) // TODO (performance): check_tx_balance calls get_tx_fee as well, consider refactoring -- sowle
-    //{
-    //  LOG_PRINT_L0("balance check failed for tx " << id);
-    //  tvc.m_verification_failed = true;
-    //  return false;
-    //}
     TIME_MEASURE_FINISH_PD(validate_amount_time);
 
     TIME_MEASURE_START_PD(validate_alias_time);
@@ -182,8 +188,7 @@ namespace currency
     //check key images for transaction if it is not kept by block
     if(!from_core && !kept_by_block)
     {
-
-      if(!validate_tx_semantic(tx, blob_size))
+      if(!validate_tx_semantic(tx, blob_size, id))
       {          
         // tx semantics check failed
         LOG_PRINT_RED_L0("Transaction " << id << " semantics check failed ");
@@ -227,9 +232,10 @@ namespace currency
     TIME_MEASURE_FINISH_PD(check_keyimages_ws_ms_time);
 
     TIME_MEASURE_START_PD(check_inputs_time);
-    crypto::hash max_used_block_id = null_hash;
-    uint64_t max_used_block_height = 0;
-    bool ch_inp_res = m_blockchain.check_tx_inputs(tx, id, max_used_block_height, max_used_block_id);
+    blockchain_storage::check_tx_inputs_context ctic{};
+    ctic.calculate_max_used_block_id = true;
+    ctic.check_hf4_coinage_rule = false;
+    bool ch_inp_res = m_blockchain.check_tx_inputs(tx, id, ctic);
     if (!ch_inp_res && !kept_by_block && !from_core)
     {
       LOG_PRINT_L0("check_tx_inputs failed, tx rejected");
@@ -238,21 +244,24 @@ namespace currency
     }
     TIME_MEASURE_FINISH_PD(check_inputs_time);
 
-    if (tx.version > TRANSACTION_VERSION_PRE_HF4)
+    if (!from_core)
     {
-      TIME_MEASURE_START_PD(check_post_hf4_balance);
-      r = check_tx_balance(tx, id);
-      CHECK_AND_ASSERT_MES_CUSTOM(r, false, { tvc.m_verification_failed = true; }, "post-HF4 tx: balance proof is invalid");
-      TIME_MEASURE_FINISH_PD(check_post_hf4_balance);
+      if (tx.version > TRANSACTION_VERSION_PRE_HF4)
+      {
+        TIME_MEASURE_START_PD(check_post_hf4_balance);
+        r = check_tx_balance(tx, id);
+        CHECK_AND_ASSERT_MES_CUSTOM(r, false, { tvc.m_verification_failed = true; }, "post-HF4 tx: balance proof is invalid");
+        TIME_MEASURE_FINISH_PD(check_post_hf4_balance);
 
-      r = process_type_in_variant_container_and_make_sure_its_unique<asset_descriptor_operation>(tx.extra, [&](const asset_descriptor_operation& ado){
-          asset_op_verification_context avc = { tx, id, ado };
+        r = process_type_in_variant_container_and_make_sure_its_unique<asset_descriptor_operation>(tx.extra, [&](const asset_descriptor_operation& ado) {
+          asset_op_verification_context avc = { tx, id, ado, m_blockchain.get_top_block_height() + 1 };
           return m_blockchain.validate_asset_operation(avc, m_blockchain.get_current_blockchain_size());
-        }, true);
-      CHECK_AND_ASSERT_MES_CUSTOM(r, false, { tvc.m_verification_failed = true; }, "post-HF4 tx: asset operation is invalid");
+          }, true);
+        CHECK_AND_ASSERT_MES_CUSTOM(r, false, { tvc.m_verification_failed = true; }, "post-HF4 tx: asset operation is invalid");
+      }
     }
 
-    do_insert_transaction(tx, id, blob_size, kept_by_block, tx_fee, ch_inp_res ? max_used_block_id : null_hash, ch_inp_res ? max_used_block_height : 0);
+    do_insert_transaction(tx, id, blob_size, kept_by_block, tx_fee, ch_inp_res ? ctic.max_used_block_id : null_hash, ch_inp_res ? ctic.max_used_block_height : 0);
     
     TIME_MEASURE_FINISH_PD(tx_processing_time);
     tvc.m_added_to_pool = true;
@@ -277,25 +286,26 @@ namespace currency
     return true;
   }
   //---------------------------------------------------------------------------------
-#define LOCAL_READONLY_TRANSACTION() \
-  m_db.begin_readonly_transaction(); \
-  misc_utils::auto_scope_leave_caller db_tx_closer = misc_utils::create_scope_leave_handler([&]() \
-  { \
-    m_db.commit_transaction(); \
-  });
+#define LOCAL_READONLY_TRANSACTION()  auto local_db_tx_ptr = m_db.begin_readonly_transaction_obj(); 
+
+  //\
+//  misc_utils::auto_scope_leave_caller db_tx_closer = misc_utils::create_scope_leave_handler([&]() \
+//  { \
+//    m_db.commit_transaction(); \
+//  });
 
 
   bool tx_memory_pool::do_insert_transaction(const transaction &tx, const crypto::hash &id, uint64_t blob_size, bool kept_by_block, uint64_t fee, const crypto::hash& max_used_block_id, uint64_t max_used_block_height)
   {
     TIME_MEASURE_START_PD(begin_tx_time);
-    m_db.begin_transaction();
+    auto db_tx_ptr = m_db.begin_transaction_obj();
     TIME_MEASURE_FINISH_PD(begin_tx_time);
 
     TIME_MEASURE_START_PD(update_db_time);
     misc_utils::auto_scope_leave_caller seh = misc_utils::create_scope_leave_handler([&]()
     {
       TIME_MEASURE_START_PD(db_commit_time);
-      m_db.commit_transaction();
+      db_tx_ptr->commit_transaction();
       TIME_MEASURE_FINISH_PD(db_commit_time);
 
     });
@@ -386,6 +396,7 @@ namespace currency
         return false; // stop handling
       }
 
+#ifndef TESTNET
       std::string prev_alias = m_blockchain.get_alias_by_address(eai.m_address);
       if (!is_in_block && !eai.m_sign.size() &&
         prev_alias.size())
@@ -396,6 +407,7 @@ namespace currency
         r = false;
         return false; // stop handling
       }
+#endif
 
       if (!is_in_block)
       {
@@ -590,6 +602,16 @@ namespace currency
     return true;
   }
   //---------------------------------------------------------------------------------
+  bool tx_memory_pool::get_all_transactions_list(std::list<std::pair<crypto::hash, transaction>>& txs) const
+  {
+    m_db_transactions.enumerate_items([&](uint64_t i, const crypto::hash& h, const tx_details& tx_entry)
+                                      {
+      txs.push_back(std::make_pair(h, tx_entry.tx));
+      return true; 
+      });
+    return true;
+  }
+  //---------------------------------------------------------------------------------
   bool tx_memory_pool::get_all_transactions_list(std::list<std::string>& txs)const
   {
     m_db_transactions.enumerate_items([&](uint64_t i, const crypto::hash& h, const tx_details &tx_entry)
@@ -720,15 +742,26 @@ namespace currency
     return true;
   }
   //---------------------------------------------------------------------------------
+  std::string tx_memory_pool::get_blacklisted_txs_string() const
+  {
+    std::stringstream ss;
+    m_db_black_tx_list.enumerate_items([&](uint64_t i, const crypto::hash& td_id, const bool& /*dummy */ )
+      {
+        ss << td_id << ENDL;
+        return true;
+      });
+    return ss.str();
+  }
+  //---------------------------------------------------------------------------------
   bool tx_memory_pool::add_transaction_to_black_list(const transaction& tx)
   {
     // atm:
     // 1) the only side effect of a tx being blacklisted is the one is just ignored by fill_block_template(), but it still can be added to blockchain/pool
     // 2) it's permanent
-    LOG_PRINT_YELLOW("TX ADDED TO POOL'S BLACKLIST: " << get_transaction_hash(tx), LOG_LEVEL_0);
-    m_db.begin_transaction();
+    auto db_tx_ptr = m_db.begin_transaction_obj();
     m_db_black_tx_list.set(get_transaction_hash(tx), true);
-    m_db.commit_transaction();
+    db_tx_ptr->commit_transaction();
+    LOG_PRINT_YELLOW("TX ADDED TO POOL'S BLACKLIST: " << get_transaction_hash(tx) << ", full black list: " << ENDL << get_blacklisted_txs_string(), LOG_LEVEL_0);
     return true;
   }
   //---------------------------------------------------------------------------------
@@ -885,19 +918,19 @@ namespace currency
   void tx_memory_pool::purge_transactions()
   {
     
-    m_db.begin_transaction();
+    auto db_tx_ptr = m_db.begin_transaction_obj();
     m_db_transactions.clear();
-    m_db.commit_transaction();
+    db_tx_ptr->commit_transaction();
     // should m_db_black_tx_list be cleared here?
     CIRITCAL_OPERATION(m_key_images,clear());
   }
   //---------------------------------------------------------------------------------
   void tx_memory_pool::clear()
   {
-    m_db.begin_transaction();
+    auto db_tx_ptr = m_db.begin_transaction_obj();
     m_db_transactions.clear();
     m_db_black_tx_list.clear();
-    m_db.commit_transaction();
+    db_tx_ptr->commit_transaction();
     CIRITCAL_OPERATION(m_key_images,clear());
   }
   //---------------------------------------------------------------------------------
@@ -905,8 +938,12 @@ namespace currency
   {
     //not the best implementation at this time, sorry :(
 
-    if (is_tx_blacklisted(get_transaction_hash(txd.tx)))
+    if (is_tx_blacklisted(id))
+    {
+      LOG_PRINT_L2("[is_transaction_ready_to_go]Tx " << id << " skipped as it blacklisted");
       return false;
+    }
+      
 
     //check is ring_signature already checked ?
     if(txd.max_used_block_id == null_hash)
@@ -915,13 +952,18 @@ namespace currency
       if(txd.last_failed_id != null_hash && m_blockchain.get_current_blockchain_size() > txd.last_failed_height && txd.last_failed_id == m_blockchain.get_block_id_by_height(txd.last_failed_height))
         return false;//we already sure that this tx is broken for this height
 
-      if(!m_blockchain.check_tx_inputs(txd.tx, id, txd.max_used_block_height, txd.max_used_block_id))
+      blockchain_storage::check_tx_inputs_context ctic{};
+      ctic.check_hf4_coinage_rule = false;
+      if(!m_blockchain.check_tx_inputs(txd.tx, id, ctic))
       {
         txd.last_failed_height = m_blockchain.get_top_block_height();
         txd.last_failed_id = m_blockchain.get_block_id_by_height(txd.last_failed_height);
         return false;
       }
-    }else
+      txd.max_used_block_height = ctic.max_used_block_height;
+      txd.max_used_block_id = ctic.max_used_block_id;
+    }
+    else
     {
       if(txd.max_used_block_height >= m_blockchain.get_current_blockchain_size())
         return false;
@@ -931,14 +973,22 @@ namespace currency
         if(txd.last_failed_id == m_blockchain.get_block_id_by_height(txd.last_failed_height))
           return false;
         //check ring signature again, it is possible (with very small chance) that this transaction become again valid
-        if(!m_blockchain.check_tx_inputs(txd.tx, id, txd.max_used_block_height, txd.max_used_block_id))
+        blockchain_storage::check_tx_inputs_context ctic{};
+        ctic.check_hf4_coinage_rule = false;
+        if(!m_blockchain.check_tx_inputs(txd.tx, id, ctic))
         {
           txd.last_failed_height = m_blockchain.get_top_block_height();
           txd.last_failed_id = m_blockchain.get_block_id_by_height(txd.last_failed_height);
           return false;
         }
+        txd.max_used_block_height = ctic.max_used_block_height;
+        txd.max_used_block_id = ctic.max_used_block_id;
       }
     }
+
+    if (txd.tx.version > TRANSACTION_VERSION_PRE_HF4 && m_blockchain.get_current_blockchain_size() < txd.max_used_block_height + CURRENCY_HF4_MANDATORY_MIN_COINAGE) // coinage rule since HF4, s.a. scan_outputkeys_for_indexes()
+      return false;
+
     //if we here, transaction seems valid, but, anyway, check for key_images collisions with blockchain, just to be sure
     if (m_blockchain.have_tx_keyimges_as_spent(txd.tx))
     {
@@ -1092,7 +1142,14 @@ namespace currency
     size_t current_size = explicit_total_size;
     uint64_t current_fee = 0;
     uint64_t best_money;
-    if (!get_block_reward(pos, median_size, CURRENCY_COINBASE_BLOB_RESERVED_SIZE, already_generated_coins, best_money, height)) {
+
+    size_t blob_reserved_size = CURRENCY_COINBASE_BLOB_RESERVED_SIZE;
+    if (m_blockchain.is_hardfork_active(ZANO_HARDFORK_06))
+    {
+      blob_reserved_size = CURRENCY_COINBASE_BLOB_RESERVED_SIZE_HF6;
+    }
+
+    if (!get_block_reward(pos, median_size, blob_reserved_size, already_generated_coins, best_money, height)) {
       LOG_ERROR("Block with just a miner transaction is already too large!");
       return false;
     }
@@ -1166,7 +1223,7 @@ namespace currency
       current_fee += tx.second->fee;
 
       uint64_t current_reward;
-      if (!get_block_reward(pos, median_size, current_size + CURRENCY_COINBASE_BLOB_RESERVED_SIZE, already_generated_coins, current_reward, height))
+      if (!get_block_reward(pos, median_size, current_size + blob_reserved_size, already_generated_coins, current_reward, height))
       {
         break; // current block size is too big
       }
@@ -1190,13 +1247,14 @@ namespace currency
         if (i < best_position)
         {
           bl.tx_hashes.push_back(tx.first);
+          LOG_PRINT_L2("[fill_block_template]: Added tx to block: " << tx.first);
         }
-        else if (have_attachment_service_in_container(tx.second->tx.attachment, BC_OFFERS_SERVICE_ID, BC_OFFERS_SERVICE_INSTRUCTION_DEL))
+        /*else if (have_attachment_service_in_container(tx.second->tx.attachment, BC_OFFERS_SERVICE_ID, BC_OFFERS_SERVICE_INSTRUCTION_DEL))
         {
           // BC_OFFERS_SERVICE_INSTRUCTION_DEL transactions has zero fee, so include them here regardless of reward effectiveness
           bl.tx_hashes.push_back(tx.first);
           total_size += tx.second->blob_size;
-        }
+        }*/
       }
     }
     // add explicit transactions 
@@ -1210,9 +1268,9 @@ namespace currency
   //---------------------------------------------------------------------------------
   void tx_memory_pool::store_db_solo_options_values()
   {
-    m_db.begin_transaction();
+    auto db_tx_ptr = m_db.begin_transaction_obj();
     m_db_storage_major_compatibility_version = TRANSACTION_POOL_MAJOR_COMPATIBILITY_VERSION;
-    m_db.commit_transaction();
+    db_tx_ptr->commit_transaction();
   }
   //---------------------------------------------------------------------------------
   bool tx_memory_pool::init(const std::string& config_folder, const boost::program_options::variables_map& vm)

@@ -131,7 +131,10 @@ public static unsafe class ZanonoteBindings
         {
             fixed (byte* output = result)
             {
-                get_blob_id(input, data.Length, output);
+                // a false return means libzanonote could not parse the block template
+                // (e.g. the library is older than the daemon's block format)
+                if(!get_blob_id(input, data.Length, output))
+                    throw new InvalidOperationException("libzanonote: unable to parse Zano block template (get_blob_id failed)");
             }
         }
     }
@@ -144,7 +147,8 @@ public static unsafe class ZanonoteBindings
         {
             fixed (byte* output = result)
             {
-                get_block_id(input, data.Length, output);
+                if(!get_block_id(input, data.Length, output))
+                    throw new InvalidOperationException("libzanonote: unable to parse Zano block (get_block_id failed)");
             }
         }
     }

@@ -29,6 +29,7 @@
 #include <locale>
 #include <cstdlib>
 #include <map>
+#include <iomanip>
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_io.hpp>
 #include <boost/lexical_cast.hpp>
@@ -280,7 +281,7 @@ POP_GCC_WARNINGS
 	typedef std::map<std::wstring, std::wstring> command_line_params_w;
 
   template<typename t_pod_data>
-  void append_pod_to_strbuff(std::string& buff, const t_pod_data& pod)
+  void append_pod_to_strbuff(const t_pod_data& pod, std::string& buff)
   {
     buff.append(reinterpret_cast<const char*>(&pod), sizeof(pod));
   }
@@ -290,7 +291,7 @@ POP_GCC_WARNINGS
   {
     if (buff.size() != sizeof(pod_t))
       return false;
-    output = *reinterpret_cast<const pod_t*>(buff.data());
+		std::memcpy(std::addressof(output), buff.data(), sizeof(pod_t)); //output = *reinterpret_cast<const pod_t*>(buff.data());
     return true;
   }
 
@@ -596,7 +597,7 @@ POP_GCC_WARNINGS
     if(bin_buff.size()!=sizeof(s))
       return false;
 
-    s = *(t_pod_type*)bin_buff.data();
+		std::memcpy(std::addressof(s), bin_buff.data(), sizeof(t_pod_type)); //s = *(t_pod_type*)bin_buff.data();
     return true;
   }
   //----------------------------------------------------------------------------
@@ -792,6 +793,34 @@ POP_GCC_WARNINGS
 		return buff;	
 	}
 #endif
+
+
+  inline std::string format_bytes_human_readable(uint64_t bytes, int decimals = 1, bool use_mebibytes = false, size_t base_unit = 1024)
+  {
+    static const std::array<const char*, 7> units_mb  = { "B", "KB",  "MB",  "GB",  "TB",  "PB",  "EB"  };
+    static const std::array<const char*, 7> units_mib = { "B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB" };
+
+    const auto& units = use_mebibytes ? units_mib : units_mb;
+
+    if (bytes == 0)
+      return "0 B";
+
+    double value = static_cast<double>(bytes);
+    size_t units_idx = 0;
+
+    while (value >= base_unit && units_idx + 1 < units.size())
+    {
+      value /= base_unit;
+      ++units_idx;
+    }
+
+    char buf[64];
+    const char* fmt = (decimals == 1) ? "%.1f %s" : (decimals == 2 ? "%.2f %s" : "%.0f %s");
+
+    std::snprintf(buf, sizeof buf, fmt, value, units[units_idx]);
+    return std::string(buf);
+  }
+
 } // namespace stringtools
 } // namwspace epee
 

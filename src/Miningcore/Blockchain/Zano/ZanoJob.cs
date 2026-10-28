@@ -119,6 +119,9 @@ public class ZanoJob
 
         var blobBytes = ZanonoteBindings.ConvertBlock(blobTemplate, blobTemplate.Length, fullNonce);
 
+        if(blobBytes == null)
+            throw new StratumException(StratumError.MinusOne, "unable to build block from template");
+
         // compute
         if(!progpowHasher.Compute(logger, (int) BlockTemplate.Height, EncodeBlob(workerExtraNonce), fullNonce, out var _, out var resultBytes))
             throw new StratumException(StratumError.MinusOne, "bad hash");

@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2019 Zano Project
+// Copyright (c) 2014-2025 Zano Project
 // Copyright (c) 2014-2018 The Louisdor Project
 // Copyright (c) 2012-2013 The Cryptonote developers
 // Distributed under the MIT/X11 software license, see the accompanying
@@ -6,7 +6,7 @@
 
 
 #include "command_line.h"
-#include "currency_config.h"
+#include "currency_core/currency_config.h"
 
 namespace command_line
 {
@@ -40,7 +40,16 @@ namespace command_line
   const arg_descriptor<std::string> arg_process_predownload_from_path("predownload-from-local-path", "Instead of downloading file use downloaded local file");
   const arg_descriptor<bool>        arg_validate_predownload  ( "validate-predownload", "Paranoid mode, re-validate each block from pre-downloaded database and rebuild own database");
   const arg_descriptor<std::string> arg_predownload_link      ( "predownload-link", "Override url for blockchain database pre-downloading");
+  const arg_descriptor<bool>        arg_non_pruning_mode      ( "non-pruning-mode", "Enables a special operational mode with full retention of all tx signatures. Will terminate if the DB was previously in (normal) pruning mode. Use only if you know what you do.");
+
+  const arg_descriptor<std::string>   arg_enable_tx_socks5_relay_proxy("enable-tx-socks5-relay-proxy", "Enable SOCKS5 relay proxy for Transactions", "");
+  const arg_descriptor<std::string>   arg_tx_relay_url("tx-relay-url", "Override base URL used to send tx via proxy when --enable-tx-socks5-relay-proxy is set", "");
+  const arg_descriptor<std::string>   arg_enable_block_socks5_relay_proxy("enable-block-socks5-relay-proxy", "Enable SOCKS5 relay proxy for Blocks", "");
+  const arg_descriptor<std::string>   arg_block_relay_url("block-relay-url", "Override base URL used to submit PoS blocks when --enable-block-socks5-relay-proxy is set", "");
 
   const arg_descriptor<std::string> arg_deeplink  ( "deeplink-params", "Deeplink parameter, in that case app just forward params to running app");
+
+  const arg_descriptor<bool>        arg_allow_legacy_payment_id_size ("allow-legacy-payment-id-size", "Temporary removes requirement for payment id to be 8 bytes long");
+  const arg_descriptor<bool>        arg_unsecure_disable_extension_id_check("unsecure-disable-extension-id-check", "Disable official extension ID check for HTTP requests");
 
 }

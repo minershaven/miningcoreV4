@@ -41,7 +41,7 @@ namespace epee
     template<typename from_type, typename to_type>
     void convert_int_to_uint(const from_type& from, to_type& to)
     {
-PUSH_WARNINGS
+PUSH_VS_WARNINGS
 PUSH_GCC_WARNINGS
 DISABLE_VS_WARNINGS(4018)
       CHECK_AND_ASSERT_THROW_MES(from >=0, "unexpected int value with signed storage value less than 0, and unsigned receiver value: " << from);
@@ -49,7 +49,7 @@ DISABLE_GCC_AND_CLANG_WARNING(sign-compare)
       CHECK_AND_ASSERT_THROW_MES(from <= std::numeric_limits<to_type>::max(), "int value overhead: try to set value " << from << " to type " << typeid(to_type).name() << " with max possible value = " << std::numeric_limits<to_type>::max());
       to = static_cast<to_type>(from);
 POP_GCC_WARNINGS
-POP_WARNINGS
+POP_VS_WARNINGS
     }
     template<typename from_type, typename to_type>
     void convert_int_to_int(const from_type& from, to_type& to)
@@ -64,14 +64,14 @@ POP_GCC_WARNINGS
     template<typename from_type, typename to_type>
     void convert_uint_to_any_int(const from_type& from, to_type& to)
     {
-PUSH_WARNINGS
+PUSH_VS_WARNINGS
 PUSH_GCC_WARNINGS
 DISABLE_VS_WARNINGS(4018)
 DISABLE_CLANG_WARNING(tautological-constant-out-of-range-compare)
         CHECK_AND_ASSERT_THROW_MES(from <= std::numeric_limits<to_type>::max(), "uint value overhead: try to set value " << from << " to type " << typeid(to_type).name() << " with max possible value = " << std::numeric_limits<to_type>::max());
       to = static_cast<to_type>(from);
 POP_GCC_WARNINGS
-POP_WARNINGS
+POP_VS_WARNINGS
     }
 
     template<typename from_type, typename to_type, bool, bool> //is from signed, is from to signed

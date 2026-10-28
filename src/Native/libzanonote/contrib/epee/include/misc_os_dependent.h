@@ -41,6 +41,8 @@
 #include <mach/clock.h>
 #include <mach/mach.h>
 #endif
+#include <boost/stacktrace.hpp>
+
 
 #pragma once 
 namespace epee
@@ -109,31 +111,19 @@ namespace misc_utils
 #endif
 	}
 
-
-#if defined(__GNUC__) && !defined(__ANDROID__)
-#include <execinfo.h>
-#include <boost/core/demangle.hpp>
-#endif
-  inline std::string print_trace_default()
+  inline std::string print_trace_default() noexcept
   {
-    std::stringstream ss;
-#if defined(__GNUC__) && !defined(__ANDROID__)
-    ss << std::endl << "STACK" << std::endl;
-    const size_t max_depth = 100;
-    size_t stack_depth;
-    void *stack_addrs[max_depth];
-    char **stack_strings;
-
-    stack_depth = backtrace(stack_addrs, max_depth);
-    stack_strings = backtrace_symbols(stack_addrs, stack_depth);
-
-    for (size_t i = 1; i < stack_depth; i++) 
-    {      
-      ss << boost::core::demangle(stack_strings[i]) << std::endl;
+    try
+    {
+      std::stringstream ss;
+      ss << std::endl << "STACK" << std::endl;
+      ss << boost::stacktrace::stacktrace() << std::endl;
+      return ss.str();
     }
-    free(stack_strings); // malloc()ed by backtrace_symbols
-#endif
-    return ss.str();
+    catch(...)
+    {
+      return std::string("(no callstack due to an exception)");
+    }
   }
 
   typedef std::string (stack_retrieving_function_t)();
@@ -141,27 +131,35 @@ namespace misc_utils
   //
   // To get stack trace call it with the defaults.
   // 
-  inline std::string get_callstack(stack_retrieving_function_t* p_stack_retrieving_function_to_be_added = nullptr, bool remove_func = false)
+  inline std::string get_callstack(stack_retrieving_function_t* p_stack_retrieving_function_to_be_added = nullptr, bool remove_func = false) noexcept
   {
     static stack_retrieving_function_t* p_srf = nullptr;
-    
-    if (remove_func)
-    {
-      p_srf = nullptr;
-      return "";
-    }
-    
-    if (p_stack_retrieving_function_to_be_added != nullptr)
-    {
-      p_srf = p_stack_retrieving_function_to_be_added;
-      return "";
-    }
 
-    if (p_srf != nullptr)
-      return p_srf();
+    try
+    {
+    
+      if (remove_func)
+      {
+        p_srf = nullptr;
+        return "";
+      }
+    
+      if (p_stack_retrieving_function_to_be_added != nullptr)
+      {
+        p_srf = p_stack_retrieving_function_to_be_added;
+        return "";
+      }
 
-    return print_trace_default();
+      if (p_srf != nullptr)
+        return p_srf();
+
+      return print_trace_default();
+    }
+    catch(...)
+    {
+      return std::string("(no callstack due to an exception)");
+    }
   }
 
-}
-}
+} // namespace misc_utils
+} // namespace epee

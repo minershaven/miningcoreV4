@@ -60,8 +60,8 @@ inline bool do_serialize(Archive &ar, T &v)
   template<> struct has_free_serializer<T> { typedef boost::true_type type; }
 #define VARIANT_TAG(A, T, Tg) \
   template <bool W> struct variant_serialization_traits<A<W>, T> { static inline typename A<W>::variant_tag_type get_tag() { return Tg; } }
-#define BEGIN_SERIALIZE() \
-  template <bool W, template <bool> class Archive> bool do_serialize(Archive<W> &_ser_ar) {uint8_t s_current_version ATTRIBUTE_UNUSED = 0; uint8_t s_version ATTRIBUTE_UNUSED = 0;
+#define BEGIN_SERIALIZE() BEGIN_SERIALIZE_OBJECT()
+//  template <bool W, template <bool> class Archive> bool do_serialize(Archive<W> &_ser_ar) {uint8_t s_current_version ATTRIBUTE_UNUSED = 0; uint8_t s_version ATTRIBUTE_UNUSED = 0;
 #define BEGIN_SERIALIZE_OBJECT() \
   template <bool W, template <bool> class Archive> bool do_serialize(Archive<W> &_ser_ar) {_ser_ar.begin_object(); bool _ser_res = do_serialize_object(_ser_ar); _ser_ar.end_object(); return _ser_res; } \
   template <bool W, template <bool> class Archive> bool do_serialize_object(Archive<W> &_ser_ar){ uint8_t s_current_version ATTRIBUTE_UNUSED = 0; uint8_t s_version ATTRIBUTE_UNUSED = 0; 
@@ -82,15 +82,20 @@ do { \
   bool _ser_res = ::do_serialize(_ser_ar, f); \
   if (!_ser_res || !_ser_ar.stream().good()) return false; \
 } while (0);
-#define FIELDS(f) \
-  bool _ser_res = ::do_serialize(_ser_ar, f); \
-if (!_ser_res || !_ser_ar.stream().good()) return false;
+// Serialize base-class fields inline into the current object
+#define CHAIN_BASE(base_type) \
+do { \
+  bool _ser_res = static_cast<base_type&>(*this).do_serialize_object(_ser_ar); \
+  if (!_ser_res || !_ser_ar.stream().good()) return false; \
+} while (0);
 #define FIELD(f) \
 do { \
   _ser_ar.tag(#f); \
   bool _ser_res = ::do_serialize(_ser_ar, f); \
   if (!_ser_res || !_ser_ar.stream().good()) return false; \
 } while (0);
+// Serialize an aggregated member under its own field name
+#define FIELDS(f) FIELD(f)
 #define VARINT_FIELD(f) \
 do { \
   _ser_ar.tag(#f); \
@@ -257,11 +262,19 @@ template<typename destination_t>
 struct transition_t<true, destination_t>
 {
   template <typename archive, typename origin_type>
-  static bool chain_serialize(archive &ar, const origin_type& origin_tx)
+  static bool chain_serialize(archive &ar, const origin_type& origin_obj)
   {
-    destination_t dst_tx = AUTO_VAL_INIT(dst_tx);
-    transition_convert(origin_tx, dst_tx);
-    return dst_tx.do_serialize(ar);
+    destination_t dst_obj = AUTO_VAL_INIT(dst_obj);
+    transition_convert(origin_obj, dst_obj);
+    return ::do_serialize(ar, dst_obj);//dst_obj.do_serialize(ar);
+  }
+
+  template <typename archive, typename origin_type>
+  static bool chain_serialize_object(archive &ar, const origin_type& origin_obj)
+  {
+    destination_t dst_obj = AUTO_VAL_INIT(dst_obj);
+    transition_convert(origin_obj, dst_obj);
+    return dst_obj.do_serialize_object(ar);
   }
 };
 
@@ -269,17 +282,29 @@ template<typename destination_t>
 struct transition_t<false, destination_t>
 {
   template <typename archive, typename origin_type>
-  static bool chain_serialize(archive &ar, origin_type& origin_tx)
+  static bool chain_serialize(archive &ar, origin_type& origin_obj)
   {
-    // TODO: consider using move semantic for temporary 'dst_tx'
-    destination_t dst_tx = AUTO_VAL_INIT(dst_tx);
-    bool r = dst_tx.do_serialize(ar);
+    // TODO: consider using move semantic for temporary 'dst_obj'
+    destination_t dst_obj = AUTO_VAL_INIT(dst_obj);
+    //bool r = dst_obj.do_serialize(ar);
+    bool r = ::do_serialize(ar, dst_obj);
     if (!r) return r;
-    return transition_convert(dst_tx, origin_tx);
+    return transition_convert(dst_obj, origin_obj);
+  }
+
+  template <typename archive, typename origin_type>
+  static bool chain_serialize_object(archive &ar, origin_type& origin_obj)
+  {
+    destination_t dst_obj = AUTO_VAL_INIT(dst_obj);
+    bool r = dst_obj.do_serialize_object(ar);
+    if (!r) return r;
+    return transition_convert(dst_obj, origin_obj);
   }
 };
 
-#define CHAIN_TRANSITION_VER(tx_version, old_type)   if (tx_version == version) return transition_t<W, old_type>::chain_serialize(_ser_ar, *this);
+#define CHAIN_TRANSITION_VER(tx_version, old_type)   if (tx_version == version) return transition_t<W, old_type>::chain_serialize_object(_ser_ar, *this);
+
+#define FIELD_TRANSITION_VER(transition_if_version_is_lower_than, field, old_type)   if (transition_if_version_is_lower_than > version) { _ser_ar.tag(#field); if (!transition_t<W, old_type>::chain_serialize(_ser_ar, field) || !_ser_ar.stream().good()) return false; } else { FIELD(field) }
 
 #include "serialize_basic_types.h"
 #include "string.h"

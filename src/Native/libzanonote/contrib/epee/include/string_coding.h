@@ -62,10 +62,10 @@ namespace string_encoding
 
 	inline std::string convert_to_ansii(const std::wstring& str_from)
 	{
-    PUSH_WARNINGS
+    PUSH_VS_WARNINGS
     DISABLE_VS_WARNINGS(4244)
 		std::string res(str_from.begin(), str_from.end());
-    POP_WARNINGS
+    POP_VS_WARNINGS
 		return res;
 	}
 #ifdef WIN32

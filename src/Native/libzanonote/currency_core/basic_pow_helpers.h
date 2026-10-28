@@ -27,15 +27,26 @@
 
 namespace currency
 {
+  int ethash_height_to_epoch(uint64_t height);
+  crypto::hash ethash_epoch_to_seed(int epoch);
   crypto::hash get_block_header_mining_hash(const block& b);
+  crypto::hash get_block_longhash(uint64_t h, const crypto::hash& block_header_hash, uint64_t nonce);
+  void get_block_longhash(const block& b, crypto::hash& res);
+  crypto::hash get_block_longhash(const block& b);
 
-  inline uint64_t& access_nonce_in_block_blob(blobdata& bd)
+  uint64_t measure_longhash_calculation_time_us(const block& b, crypto::hash& pow_result_out, uint64_t* p_context_build_time_ms = nullptr);
+
+  inline uint64_t get_nonce_from_blockblob(const blobdata& bd)
   {
-    return *reinterpret_cast<uint64_t*>(&bd[CURRENCY_MINER_BLOCK_BLOB_NONCE_OFFSET]);
+    uint64_t nonce = 0;
+    CHECK_AND_ASSERT_MES(bd.size() >= CURRENCY_MINER_BLOCK_BLOB_NONCE_OFFSET + sizeof(nonce), 0, "Unexpected block buffer size = " << bd.size());
+    std::memcpy(&nonce, &bd[CURRENCY_MINER_BLOCK_BLOB_NONCE_OFFSET], sizeof(nonce));
+    return nonce;
   }
 
-  inline const uint64_t& access_nonce_in_block_blob(const blobdata& bd)
+  inline void set_nonce_to_blockblob(blobdata& bd, const uint64_t nonce)
   {
-    return *reinterpret_cast<const uint64_t*>(&bd[CURRENCY_MINER_BLOCK_BLOB_NONCE_OFFSET]);
+    CHECK_AND_ASSERT_MES(bd.size() >= CURRENCY_MINER_BLOCK_BLOB_NONCE_OFFSET + sizeof(nonce), void(), "Unexpected block buffer size = " << bd.size());
+    std::memcpy(&bd[CURRENCY_MINER_BLOCK_BLOB_NONCE_OFFSET], &nonce, sizeof(nonce));
   }
 }

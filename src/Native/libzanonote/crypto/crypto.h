@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2018 Zano Project
+// Copyright (c) 2014-2025 Zano Project
 // Copyright (c) 2014-2018 The Louisdor Project
 // Copyright (c) 2012-2013 The Cryptonote developers
 // Distributed under the MIT/X11 software license, see the accompanying
@@ -11,6 +11,7 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <type_traits>
 
 #include "common/pod-class.h"
 #include "generic-ops.h"
@@ -21,7 +22,7 @@
 #define CRYPTO_STR(X) CRYPTO_STR_(X)
 #define CRYPTO_CHECK_AND_THROW_MES(cond, msg) if (!(cond)) { throw std::runtime_error(msg " @ " __FILE__ ":" CRYPTO_STR(__LINE__)); }
 
-PUSH_WARNINGS
+PUSH_GCC_WARNINGS
 DISABLE_CLANG_WARNING(unused-private-field)
 
 
@@ -31,7 +32,7 @@ namespace crypto {
 #include "random.h"
   }
 
-  extern std::mutex random_lock;
+  std::mutex& random_lock_accessor() noexcept;
 
 #pragma pack(push, 1)
   POD_CLASS ec_point {
@@ -98,7 +99,7 @@ namespace crypto {
     static void generate_signature(const hash &, const public_key &, const secret_key &, signature &);
     friend void generate_signature(const hash &, const public_key &, const secret_key &, signature &);
     static bool check_signature(const hash &, const public_key &, const signature &);
-    friend bool check_signature(const hash &, const public_key &, const signature &);
+    friend bool check_signature(const hash &, const public_key &, const signature &) noexcept;
     static void generate_key_image(const public_key &, const secret_key &, key_image &);
     friend void generate_key_image(const public_key &, const secret_key &, key_image &);
     static void generate_ring_signature(const hash &, const key_image &,
@@ -114,17 +115,27 @@ namespace crypto {
 
   };
 
+  // thread-safe version
+  inline void generate_random_bytes(size_t size, void* p_data)
+  {
+    std::lock_guard<std::mutex> lock(random_lock_accessor());
+    generate_random_bytes_no_lock(size, p_data);
+  }
+
+
   /* Generate a value filled with random bytes.
    */
   template<typename T>
-  typename std::enable_if<std::is_pod<T>::value, T>::type rand() {
+  typename std::enable_if<std::is_pod<T>::value, T>::type rand()
+  {
     typename std::remove_cv<T>::type res;
-    std::lock_guard<std::mutex> lock(random_lock);
-    generate_random_bytes(sizeof(T), &res);
+    std::lock_guard<std::mutex> lock(random_lock_accessor());
+    generate_random_bytes_no_lock(sizeof(T), &res);
     return res;
   }
 
   /* An adapter, to be used with std::shuffle, etc.
+   * Uses thread-safe crypto::rand<>().
    */
   struct uniform_random_bit_generator
   {
@@ -133,6 +144,16 @@ namespace crypto {
     static CONSTEXPR uint64_t max() { return UINT64_MAX; }
     uint64_t operator()() { return rand<uint64_t>(); }
   };
+
+  // securely destructs data, zeros aren't garanteed
+  void wipe(void* p, size_t n) noexcept;
+
+  template<class T>
+  inline void wipe(T& obj) noexcept
+  {
+    static_assert(std::is_trivially_copyable<T>::value, "trivially copyable objects only, please");
+    wipe(&obj, sizeof(T));
+  }
 
 
   /* Generate a new key pair
@@ -177,7 +198,7 @@ namespace crypto {
    * * The receiver can either derive the public key (to check that the transaction is addressed to him) or the private key (to spend the money).
    */
   inline bool generate_key_derivation(const public_key &key1, const secret_key &key2, key_derivation &derivation) {
-    return crypto_ops::generate_key_derivation(key1, key2, derivation);
+    return crypto_ops::generate_key_derivation(key1, key2, derivation); // derivation = 8 * key2 * key1
   }
   inline void derivation_to_scalar(const key_derivation &derivation, size_t output_index, ec_scalar &result) {
     crypto::crypto_ops::derivation_to_scalar(derivation, output_index, result);
@@ -197,8 +218,16 @@ namespace crypto {
   inline void generate_signature(const hash &prefix_hash, const public_key &pub, const secret_key &sec, signature &sig) {
     crypto_ops::generate_signature(prefix_hash, pub, sec, sig);
   }
-  inline bool check_signature(const hash &prefix_hash, const public_key &pub, const signature &sig) {
-    return crypto_ops::check_signature(prefix_hash, pub, sig);
+  inline bool check_signature(const hash &prefix_hash, const public_key &pub, const signature &sig) noexcept
+  {
+    try
+    {
+      return crypto_ops::check_signature(prefix_hash, pub, sig);
+    }
+    catch(...)
+    {
+      return false;
+    }
   }
 
   /* To send money to a key:
@@ -302,10 +331,11 @@ namespace crypto {
 } // namespace crypto
 
 POD_MAKE_HASHABLE(crypto, public_key)
+POD_MAKE_LESS_OPERATOR(crypto, public_key)
 POD_MAKE_COMPARABLE(crypto, secret_key)
 POD_MAKE_HASHABLE(crypto, key_image)
 POD_MAKE_COMPARABLE(crypto, signature)
 POD_MAKE_COMPARABLE(crypto, key_derivation)
 POD_MAKE_LESS_OPERATOR(crypto, hash)
 POD_MAKE_LESS_OPERATOR(crypto, key_image)
-POP_WARNINGS
+POP_GCC_WARNINGS
