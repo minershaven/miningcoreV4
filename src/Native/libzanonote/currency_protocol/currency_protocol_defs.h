@@ -31,12 +31,14 @@ namespace currency
     std::list<blobdata> txs;
     std::vector<uint64_t> coinbase_global_outs;
     std::vector<struct_with_one_t_type<std::vector<uint64_t> > > tx_global_outs;
+    bool compact = false;
 
     BEGIN_KV_SERIALIZE_MAP()
       KV_SERIALIZE(block)
       KV_SERIALIZE(txs)
       KV_SERIALIZE(coinbase_global_outs)
       KV_SERIALIZE(tx_global_outs)
+      KV_SERIALIZE(compact)
     END_KV_SERIALIZE_MAP()
   };
 
@@ -45,6 +47,8 @@ namespace currency
     std::shared_ptr<const block_extended_info> block_ptr;
     std::shared_ptr<const transaction_chain_entry> coinbase_ptr;
     std::list<std::shared_ptr<const transaction_chain_entry> > txs_ptr;
+    // wallet transport metadata; never serialized into the blockchain database
+    bool compact = false;
   };
 
   /************************************************************************/
@@ -58,12 +62,10 @@ namespace currency
     {
       block_complete_entry b;
       uint64_t current_blockchain_height;
-      uint32_t hop;
 
       BEGIN_KV_SERIALIZE_MAP()
         KV_SERIALIZE(b)
         KV_SERIALIZE(current_blockchain_height)
-        KV_SERIALIZE(hop)
       END_KV_SERIALIZE_MAP()
     };
   };
@@ -122,7 +124,7 @@ namespace currency
       std::list<blobdata>              txs;
       std::list<block_complete_entry>  blocks;
       std::list<crypto::hash>          missed_ids;
-      uint64_t                         current_blockchain_height;
+      uint64_t                         current_blockchain_height; // height of the top block + 1
 
       BEGIN_KV_SERIALIZE_MAP()
         KV_SERIALIZE(txs)
@@ -140,6 +142,7 @@ namespace currency
     uint64_t last_checkpoint_height;
     uint64_t core_time;
     std::string client_version;
+    bool non_pruning_mode_enabled;
 
     BEGIN_KV_SERIALIZE_MAP()
       KV_SERIALIZE(current_height)
@@ -147,6 +150,7 @@ namespace currency
       KV_SERIALIZE(last_checkpoint_height)
       KV_SERIALIZE(core_time)
       KV_SERIALIZE(client_version)
+      KV_SERIALIZE(non_pruning_mode_enabled)
     END_KV_SERIALIZE_MAP()
   };
 

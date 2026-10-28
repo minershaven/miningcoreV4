@@ -9,9 +9,10 @@
 using namespace epee;
 
 #include "util.h"
-#include "currency_config.h"
+#include "currency_core/currency_config.h"
 #include "version.h"
-
+#define UTF_CPP_CPLUSPLUS 201703L
+#include "utf8.h"
 #ifdef WIN32
 #include <windows.h>
 #include <shlobj.h>
@@ -25,6 +26,7 @@ using namespace epee;
 #include <boost/asio.hpp>
 
 #include "string_coding.h"
+#include "command_line.h"
 
 namespace tools
 {
@@ -481,7 +483,7 @@ std::string get_nix_version_display_string()
     std::string config_folder;
 #ifdef WIN32
     // Windows
-#ifdef _M_X64
+#if defined(_M_X64) || defined(_M_ARM64)
     config_folder = get_special_folder_path_utf8(CSIDL_APPDATA, true) + "/" + CURRENCY_NAME_SHORT;
 #else 
     config_folder = get_special_folder_path_utf8(CSIDL_APPDATA, true) + "/" + CURRENCY_NAME_SHORT + "-x86";
@@ -728,6 +730,17 @@ std::string get_nix_version_display_string()
     return true;
   }
 
+  bool is_non_pruning_mode_enabled(const boost::program_options::variables_map& vm, bool *p_enabled_via_env /* = nullptr */)
+  {
+    const char* npm_env = std::getenv("ZANO_NON_PRUNING_MODE");
+    std::string npm_env_str = boost::algorithm::to_lower_copy(std::string(npm_env ? npm_env : ""));
+    bool npm_env_enabled = (npm_env_str == "1" || npm_env_str == "on" || npm_env_str == "true");
+    bool result = (command_line::has_arg(vm, command_line::arg_non_pruning_mode) && command_line::get_arg(vm, command_line::arg_non_pruning_mode)) || npm_env_enabled;
+    if (result && p_enabled_via_env != nullptr)
+      *p_enabled_via_env = npm_env_enabled;
+    return result;
+  }
+
   //this code was taken from https://stackoverflow.com/a/8594696/5566653 
   //credits goes to @nijansen: https://stackoverflow.com/users/1056003/nijansen 
   bool copy_dir( boost::filesystem::path const & source, boost::filesystem::path const & destination)
@@ -783,5 +796,255 @@ std::string get_nix_version_display_string()
     }
     return true;
   }
+
+  uint64_t get_total_system_memory()
+  {
+#if defined(_WIN32) || defined(_WIN64)
+    // Windows
+    MEMORYSTATUSEX status;
+    status.dwLength = sizeof(status);
+    if (GlobalMemoryStatusEx(&status)) {
+      return static_cast<std::uint64_t>(status.ullTotalPhys);
+    }
+    return 0;
+
+#elif defined(__APPLE__) || defined(__MACH__) || defined(__linux__) || defined(__unix__)
+    // POSIX (Linux, macOS, etc.)
+    // On most Unix-like systems, sysconf(_SC_PHYS_PAGES) and sysconf(_SC_PAGE_SIZE)
+    // will give total number of pages and page size in bytes.
+    long pages = sysconf(_SC_PHYS_PAGES);
+    long page_size = sysconf(_SC_PAGE_SIZE);
+    if (pages == -1 || page_size == -1) {
+      return 0;
+    }
+    return static_cast<std::uint64_t>(pages) * static_cast<std::uint64_t>(page_size);
+#else
+    // Fallback for other OS
+    return 0;
+#endif
+  }
+
+  std::pair<std::string, std::string> pretty_print_big_nums_to_pair(std::uint64_t num)
+  {
+    // 1024-based suffixes
+    static const char* suffixes[] = { "", "K", "M", "G", "T", "P", "E" };
+
+    double count = static_cast<double>(num);
+    int i = 0;
+    // Loop until we find the largest suffix that fits
+    while (count >= 1024.0 && i < (static_cast<int>(sizeof(suffixes) / sizeof(suffixes[0])) - 1))
+    {
+      count /= 1024.0;
+      i++;
+    }
+
+    // Format with 2 decimal places (you can adjust as you like)
+    std::ostringstream os;
+    std::pair<std::string, std::string> res;
+    os << std::fixed << std::setprecision(2) << count;
+    res.first = os.str();
+    res.second = suffixes[i];
+    return res;
+  }
+
+  std::string pretty_print_big_nums(std::uint64_t num)
+  {
+    auto pr = pretty_print_big_nums_to_pair(num);
+    return pr.first + " " + pr.second;
+  }
+
+
+  bool isUtf8(std::string_view text, size_t* p_invalid_offset) 
+  {
+    size_t local_invalid = 0;
+    size_t& invalid = p_invalid_offset ? *p_invalid_offset : local_invalid;
+    invalid = ::utf8::find_invalid(text);
+    return invalid == std::string_view::npos;
+  }
+
+  bool sanitize_utf8(std::string& str_to_sanitize)
+  {
+    size_t invalid = 0;
+    if (!isUtf8(str_to_sanitize, &invalid)) 
+    {
+      std::string temp;
+      utf8::replace_invalid(str_to_sanitize.begin(), str_to_sanitize.end(), back_inserter(temp));
+      str_to_sanitize.swap(temp);
+      return true;
+    }
+    return false;
+  }
+
+//   // UTF-8 encoding of the Unicode replacement character U+FFFD.
+//   static const char REPLACEMENT_CHAR_UTF8[] = "\xEF\xBF\xBD";
+// 
+//   bool sanitize_utf8(std::string& str_to_sanitize)
+//   {
+//     const unsigned char* data = reinterpret_cast<const unsigned char*>(str_to_sanitize.data());
+//     std::size_t length = str_to_sanitize.size();
+//     std::size_t i = 0;
+// 
+//     std::string sanitized;
+//     sanitized.reserve(length); // Reserve to avoid repeated allocations
+// 
+//     bool changed = false;
+// 
+//     while (i < length)
+//     {
+//       unsigned char c = data[i];
+// 
+//       // 1) ASCII fast path: 0xxxxxxx
+//       if (c < 0x80)
+//       {
+//         sanitized.push_back(static_cast<char>(c));
+//         i++;
+//       }
+//       // 2) 2-byte sequence: 110xxxxx 10xxxxxx
+//       else if ((c & 0xE0) == 0xC0)
+//       {
+//         // Need at least 2 bytes total
+//         if (i + 1 < length)
+//         {
+//           unsigned char c2 = data[i + 1];
+//           // Valid second byte: 10xxxxxx
+//           // Also ensure it's not an overlong encoding (0xC0, 0xC1 are invalid starts)
+//           if ((c2 & 0xC0) == 0x80 && (c & 0xFE) != 0xC0)
+//           {
+//             sanitized.push_back(static_cast<char>(c));
+//             sanitized.push_back(static_cast<char>(c2));
+//             i += 2;
+//           }
+//           else
+//           {
+//             sanitized.append(REPLACEMENT_CHAR_UTF8);
+//             changed = true;
+//             // Advance by one or two bytes if second byte was somewhat valid
+//             i += 1 + ((c2 & 0xC0) == 0x80);
+//           }
+//         }
+//         else
+//         {
+//           // Truncated 2-byte sequence at the end
+//           sanitized.append(REPLACEMENT_CHAR_UTF8);
+//           changed = true;
+//           i++;
+//         }
+//       }
+//       // 3) 3-byte sequence: 1110xxxx 10xxxxxx 10xxxxxx
+//       else if ((c & 0xF0) == 0xE0)
+//       {
+//         // Need at least 3 bytes total
+//         if (i + 2 < length)
+//         {
+//           unsigned char c2 = data[i + 1];
+//           unsigned char c3 = data[i + 2];
+//           if (((c2 & 0xC0) == 0x80) &&
+//             ((c3 & 0xC0) == 0x80))
+//           {
+//             // Combine to form a code point:
+//             //  1110xxxx 10xxxxxx 10xxxxxx
+//             // Check for UTF-16 surrogates (invalid in UTF-8)
+//             unsigned int codepoint = ((c & 0x0F) << 12)
+//               | ((c2 & 0x3F) << 6)
+//               | (c3 & 0x3F);
+//             if (codepoint >= 0xD800 && codepoint <= 0xDFFF)
+//             {
+//               // Surrogate half, invalid in UTF-8
+//               sanitized.append(REPLACEMENT_CHAR_UTF8);
+//               changed = true;
+//             }
+//             else
+//             {
+//               // Valid 3-byte sequence
+//               sanitized.push_back(static_cast<char>(c));
+//               sanitized.push_back(static_cast<char>(c2));
+//               sanitized.push_back(static_cast<char>(c3));
+//             }
+//             i += 3;
+//           }
+//           else
+//           {
+//             sanitized.append(REPLACEMENT_CHAR_UTF8);
+//             changed = true;
+//             // Advance by how many bytes look valid
+//             i += 1 + ((c2 & 0xC0) == 0x80) + ((c3 & 0xC0) == 0x80);
+//           }
+//         }
+//         else
+//         {
+//           // Truncated 3-byte sequence
+//           sanitized.append(REPLACEMENT_CHAR_UTF8);
+//           changed = true;
+//           i = length; // jump out
+//         }
+//       }
+//       // 4) 4-byte sequence: 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
+//       else if ((c & 0xF8) == 0xF0)
+//       {
+//         // Need at least 4 bytes total
+//         if (i + 3 < length)
+//         {
+//           unsigned char c2 = data[i + 1];
+//           unsigned char c3 = data[i + 2];
+//           unsigned char c4 = data[i + 3];
+//           if (((c2 & 0xC0) == 0x80) &&
+//             ((c3 & 0xC0) == 0x80) &&
+//             ((c4 & 0xC0) == 0x80))
+//           {
+//             // Combine to form a code point:
+//             //  11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
+//             unsigned int codepoint = ((c & 0x07) << 18)
+//               | ((c2 & 0x3F) << 12)
+//               | ((c3 & 0x3F) << 6)
+//               | (c4 & 0x3F);
+//             // Max valid code point is 0x10FFFF
+//             if (codepoint <= 0x10FFFF)
+//             {
+//               sanitized.push_back(static_cast<char>(c));
+//               sanitized.push_back(static_cast<char>(c2));
+//               sanitized.push_back(static_cast<char>(c3));
+//               sanitized.push_back(static_cast<char>(c4));
+//             }
+//             else
+//             {
+//               sanitized.append(REPLACEMENT_CHAR_UTF8);
+//               changed = true;
+//             }
+//             i += 4;
+//           }
+//           else
+//           {
+//             sanitized.append(REPLACEMENT_CHAR_UTF8);
+//             changed = true;
+//             i += 1 + ((c2 & 0xC0) == 0x80) +
+//               ((c3 & 0xC0) == 0x80) +
+//               ((c4 & 0xC0) == 0x80);
+//           }
+//         }
+//         else
+//         {
+//           // Truncated 4-byte sequence
+//           sanitized.append(REPLACEMENT_CHAR_UTF8);
+//           changed = true;
+//           i = length; // jump out
+//         }
+//       }
+//       else
+//       {
+//         // Invalid leading byte (> 0xF4 or some unexpected pattern)
+//         sanitized.append(REPLACEMENT_CHAR_UTF8);
+//         changed = true;
+//         i++;
+//       }
+//     }
+// 
+//     // Update original string only if changes were made
+//     if (changed)
+//     {
+//       str_to_sanitize = std::move(sanitized);
+//       return true;
+//     }
+//     return false;
+//   }
 
 } // namespace tools

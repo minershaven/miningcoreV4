@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2024 Zano Project
+// Copyright (c) 2014-2026 Zano Project
 // Copyright (c) 2014-2018 The Louisdor Project
 // Copyright (c) 2012-2013 The Cryptonote developers
 // Distributed under the MIT/X11 software license, see the accompanying
@@ -10,7 +10,7 @@
 #ifndef TESTNET
 #define CURRENCY_FORMATION_VERSION                      84
 #else
-#define CURRENCY_FORMATION_VERSION                      99
+#define CURRENCY_FORMATION_VERSION                      103
 #endif
 
 #define CURRENCY_GENESIS_NONCE                          (CURRENCY_FORMATION_VERSION + 101011010121) //bender's nightmare
@@ -18,20 +18,29 @@
 
                                                         
 #define CURRENCY_MAX_BLOCK_NUMBER                       500000000
-#define CURRENCY_MAX_BLOCK_SIZE                         500000000  // block header blob limit, never used!
-#define CURRENCY_TX_MAX_ALLOWED_INPUTS                  256        // limited primarily by asset surjection proof
-#define CURRENCY_TX_MAX_ALLOWED_OUTS                    2000
-#define CURRENCY_TX_MIN_ALLOWED_OUTS                    2      // effective starting HF4 Zarcanum
-#define CURRENCY_PUBLIC_ADDRESS_BASE58_PREFIX           0xc5   // addresses start with 'Zx'
-#define CURRENCY_PUBLIC_INTEG_ADDRESS_BASE58_PREFIX     0x3678 // integrated addresses start with 'iZ'
-#define CURRENCY_PUBLIC_INTEG_ADDRESS_V2_BASE58_PREFIX  0x36f8 // integrated addresses start with 'iZ' (new format)
-#define CURRENCY_PUBLIC_AUDITABLE_ADDRESS_BASE58_PREFIX 0x98c8 // auditable addresses start with 'aZx'
-#define CURRENCY_PUBLIC_AUDITABLE_INTEG_ADDRESS_BASE58_PREFIX 0x8a49 // auditable integrated addresses start with 'aiZX'
+#define CURRENCY_MAX_BLOCK_SIZE                         500000000     // block header blob limit, never used!
+#define CURRENCY_TX_MAX_ALLOWED_INPUTS                  256           // limited primarily by asset surjection proof
+#define CURRENCY_TX_MAX_ALLOWED_OUTS                    32            // soft rule, but matches BPP aggregation values limit; hard rule since HF6
+#define CURRENCY_TX_MAX_ALLOWED_OUTS_PRE_HF4            2000
+#define CURRENCY_TX_MIN_ALLOWED_OUTS                    2             // effective starting HF4 Zarcanum
+#define CURRENCY_TX_PRACTICAL_MAX_INPUTS                80            // limited by current tx size limit and typical input size; used in wallet to limit number of inputs in a single tx
+
+#define CURRENCY_PUBLIC_ADDRESS_BASE58_PREFIX           0xc5          // addresses start with 'Zx'
+#define CURRENCY_PUBLIC_INTEG_ADDRESS_BASE58_PREFIX     0x3678        // integrated addresses start with 'iZ'
+#define CURRENCY_PUBLIC_INTEG_ADDRESS_V2_BASE58_PREFIX  0x36f8        // integrated addresses start with 'iZ' (new format)
+#define CURRENCY_PUBLIC_AUDITABLE_ADDRESS_BASE58_PREFIX 0x98c8        // auditable addresses start with 'aZx'
+#define CURRENCY_PUBLIC_AUDITABLE_INTEG_ADDRESS_BASE58_PREFIX 0x8a49  // auditable integrated addresses start with 'aiZX'
+
+#define CURRENCY_PUBLIC_GATEWAY_BASE58_PREFIX           0x656e     // gateway addresses start with "gwZ"
+#define CURRENCY_PUBLIC_INTEG_GATEWAY_BASE58_PREFIX     0x14276e   // integrated gateway addresses start with "gwiZ"
+
 #define CURRENCY_MINED_MONEY_UNLOCK_WINDOW              10
-#define CURRENT_TRANSACTION_VERSION                     2
+#define CURRENT_TRANSACTION_VERSION                     4
 #define TRANSACTION_VERSION_INITAL                      0
 #define TRANSACTION_VERSION_PRE_HF4                     1
-#define TRANSACTION_VERSION_POST_HF4                    2 
+#define TRANSACTION_VERSION_POST_HF4                    2
+#define TRANSACTION_VERSION_POST_HF5                    3
+#define TRANSACTION_VERSION_POST_HF6                    4
 #define HF1_BLOCK_MAJOR_VERSION                         1
 #define HF3_BLOCK_MAJOR_VERSION                         2
 #define HF3_BLOCK_MINOR_VERSION                         0
@@ -40,6 +49,8 @@
 #define CURRENCY_DEFAULT_DECOY_SET_SIZE                 10
 #define CURRENCY_HF4_MANDATORY_DECOY_SET_SIZE           15
 #define CURRENCY_HF4_MANDATORY_MIN_COINAGE              10
+#define CURRENCY_PRE_HARDFORK_TX_FREEZE_PERIOD          60 // number of blocks before the hardfork activation when no new txs are accepted (effective from HF5)
+#define CURRENCY_HF6_INTRINSIC_PAYMENT_ID_SIZE          8 // size of intrinsic (per-output) payment id
 
 #define CURRENT_BLOCK_MINOR_VERSION                     0
 #define CURRENCY_BLOCK_FUTURE_TIME_LIMIT                60*60*2
@@ -52,6 +63,7 @@
 #define CURRENCY_REWARD_BLOCKS_WINDOW                   400
 #define CURRENCY_BLOCK_GRANTED_FULL_REWARD_ZONE         125000 //size of block (bytes) after which reward for block calculated using block size
 #define CURRENCY_COINBASE_BLOB_RESERVED_SIZE            1100
+#define CURRENCY_COINBASE_BLOB_RESERVED_SIZE_HF6        8000
 #define CURRENCY_MAX_TRANSACTION_BLOB_SIZE              (CURRENCY_BLOCK_GRANTED_FULL_REWARD_ZONE - CURRENCY_COINBASE_BLOB_RESERVED_SIZE*2) 
 #define CURRENCY_FREE_TX_MAX_BLOB_SIZE                  1024 // soft txpool-based limit for free-of-charge txs (such as BC_OFFERS_SERVICE_INSTRUCTION_DEL)
 #define CURRENCY_DISPLAY_DECIMAL_POINT                  12
@@ -103,11 +115,14 @@
 #define BLOCKS_SYNCHRONIZING_DEFAULT_SIZE               2000000   //by default keep synchronizing packets not bigger then 2MB
 #define CURRENCY_PROTOCOL_MAX_BLOCKS_REQUEST_COUNT      500     
 #define CURRENCY_PROTOCOL_MAX_TXS_REQUEST_COUNT         500    
+#define TX_HASHES_IN_BLOCK_MAX_COUNT                    5000   // maximum number of tx hashes in a block
+#define CURRENCY_NOTIFY_REQUEST_CHAIN_MAX_BLOCKS_COUNT  100    // maximum number of blocks in a NOTIFY_REQUEST_CHAIN request           
 
 
-#define CURRENCY_ALT_BLOCK_LIVETIME_COUNT               (CURRENCY_BLOCKS_PER_DAY*7)//one week
+#define CURRENCY_ALT_BLOCK_LIVETIME_COUNT               (CURRENCY_BLOCKS_PER_DAY/12)//2 hours
 #define CURRENCY_ALT_BLOCK_MAX_COUNT                    43200 //30 days
 #define CURRENCY_MEMPOOL_TX_LIVETIME                    345600 //seconds, 4 days
+#define CURRENCY_MEMPOOL_MAX_TX_COUT                    10000 
 
 
 #ifndef TESTNET
@@ -124,7 +139,14 @@
 #define STRARUM_DEFAULT_PORT                            51113
 #define P2P_NETWORK_ID_TESTNET_FLAG                     1
 #define P2P_MAINTAINERS_PUB_KEY                         "aaa2d7aabc8d383fd53a3ae898697b28f236ceade6bafc1eecff413a6a02272a"
-#define DIFFICULTY_POS_STARTER                          1
+#ifdef BUILD_TESTS
+#  define DIFFICULTY_POS_STARTER                        1
+#else
+static_assert(CURRENCY_FORMATION_VERSION == 103);
+#  define DIFFICULTY_POS_STARTER                        5'000'000'000'000'000'000ULL // remove this branch after CURRENCY_FORMATION_VERSION > 103 in the testnet
+#endif
+#define DIFFICULTY_POS_STARTER_TESTNET                  5'000'000'000'000'000'000ULL // mininum possible difficulty after DIFFICULTY_POS_STARTER_TESTNET_HEIGHT
+#define DIFFICULTY_POS_STARTER_TESTNET_HEIGHT           200
 #endif
 
 #define P2P_NETWORK_ID_VER                              (CURRENCY_FORMATION_VERSION+0)
@@ -144,6 +166,9 @@
 #define P2P_DEFAULT_HANDSHAKE_INVOKE_TIMEOUT            10000      //10 seconds
 #define P2P_DEFAULT_WHITELIST_CONNECTIONS_PERCENT       70
 #define P2P_FAILED_ADDR_FORGET_SECONDS                  (60*5)     //5 minutes
+#define P2P_FAILED_ADDR_CACHE_MAX_SIZE                  1000      //hard cap for m_conn_fails_cache size
+#define P2P_DEFAULT_MAX_INCOMING_CONNECTIONS_COUNT      200
+#define P2P_DEFAULT_MAX_CONNECTIONS_PER_IP              3          //allowed count of connections from single IP, including white list
 
 #define P2P_IP_BLOCKTIME                                (60*60*24) //24 hours
 #define P2P_IP_FAILS_BEFOR_BLOCK                        10
@@ -175,7 +200,16 @@
 #define WALLET_FILE_SIGNATURE_V2                        0x1111011201101011LL  // another Bender's nightmare
 #define WALLET_FILE_BINARY_HEADER_VERSION_INITAL        1000
 #define WALLET_FILE_BINARY_HEADER_VERSION_2             1001
-//#define WALLET_FILE_BINARY_HEADER_VERSION_3             1002
+#define WALLET_FILE_BINARY_HEADER_VERSION_3             1002
+#define WALLET_FILE_BINARY_HEADER_VERSION_4             1003
+#define WALLET_FILE_BINARY_HEADER_VERSION_5             1004
+
+#define WALLET_KDF_ALGO_NONE                            0
+#define WALLET_KDF_ALGO_ROMIX_KECCAK                    1
+#define WALLET_KDF_ROMIX_N_LOG2                         20 //phase 1: the buffer size is V = 2^(N_log2) * 32 bytes, where N_log2 = 20 -> 1 million blocks * 32 bytes = 32 MiB
+#define WALLET_KDF_ROMIX_N_LOG2_MAX                     22
+#define WALLET_KDF_ROMIX_PHASE2_LOG2_REDUCTION          3  //phase 2: iteration reduction: 0 = full N phase 2 iterations, 1 = N/2 iterations 2 = N/4, 3 = N/8, 4 = N/16 ... (still 32 MiB at N_log2=20)
+#define WALLET_KDF_SALT_SIZE                            16
 
 #define WALLET_FILE_MAX_KEYS_SIZE                       10000 //
 #define WALLET_BRAIN_DATE_OFFSET                        1543622400
@@ -184,10 +218,16 @@
                                                                //which is about 15 years
 #define WALLET_BRAIN_DATE_MAX_WEEKS_COUNT               800
 
+// Password policy
+#define WALLET_PASSWORD_MIN_LENGTH                      8
+#define WALLET_PASSWORD_MAX_LENGTH                      256
+
 #define OFFER_MAXIMUM_LIFE_TIME                         (60*60*24*30)  // 30 days
 
 #define GUI_BLOCKS_DISPLAY_COUNT                        40
 #define GUI_DISPATCH_QUE_MAXSIZE                        100
+
+#define CURRENCY_GATEWAY_ADDRESS_REGISTRATION_FEE       ((uint64_t)100000000000000) // 100 Zano
 
 #define ALLOW_DEBUG_COMMANDS
 
@@ -215,7 +255,6 @@
 #define ALIAS_MINIMUM_PUBLIC_SHORT_NAME_ALLOWED         6
 #define ALIAS_SHORT_NAMES_VALIDATION_PUB_KEY            "37947f7b6a5268c5d0a48bde73d7a426f0b5f24648f74024279540207dc70031" 
 
-
 #define ALIAS_NAME_MAX_LEN                              255
 #define ALIAS_VALID_CHARS                               "0123456789abcdefghijklmnopqrstuvwxyz-."
 #define ALIAS_COMMENT_MAX_SIZE_BYTES                    400
@@ -230,9 +269,15 @@
 #define CURRENCY_POOLDATA_FOLDERNAME_PREFIX             "poolstate_"
 #define CURRENCY_POOLDATA_FOLDERNAME_SUFFIX             "_v1"
 #define CURRENCY_BLOCKCHAINDATA_FOLDERNAME_PREFIX       "blockchain_" 
-#define CURRENCY_BLOCKCHAINDATA_FOLDERNAME_SUFFIX       "_v2"
+#define CURRENCY_BLOCKCHAINDATA_FOLDERNAME_SUFFIX       "_v4"
+
+#define CURRENCY_BLOCKCHAINDATA_FOLDERNAME_SUFFIX_OLD_1       "_v1"
+#define CURRENCY_BLOCKCHAINDATA_FOLDERNAME_SUFFIX_OLD_2       "_v2"
+#define CURRENCY_BLOCKCHAINDATA_FOLDERNAME_SUFFIX_OLD_3       "_v3"
+
 
 #define P2P_NET_DATA_FILENAME                           "p2pstate.bin"
+#define P2P_MANUAL_CONFIG_FILENAME                      "p2p_manual_config.json"
 #define MINER_CONFIG_FILENAME                           "miner_conf.json"
 #define GUI_SECURE_CONFIG_FILENAME                      "gui_secure_conf.bin"
 #define GUI_CONFIG_FILENAME                             "gui_settings.json"
@@ -240,21 +285,23 @@
 #define GUI_IPC_MESSAGE_CHANNEL_NAME                    CURRENCY_NAME_BASE "_message_que"
 
 #define CURRENCY_VOTING_CONFIG_DEFAULT_FILENAME         "voting_config.json"
+#define CURRENCY_CONSTRUCT_TX_LOG_FILENAME               "construct_tx.log"
+#define CURRENCY_FAILED_MINED_BLOCKS_LOG_FILENAME        "failed_mined_blocks.log"
 
 
 #define CURRENT_TRANSACTION_CHAIN_ENTRY_ARCHIVE_VER     3
 #define CURRENT_BLOCK_EXTENDED_INFO_ARCHIVE_VER         1
 
 #define BLOCKCHAIN_STORAGE_MAJOR_COMPATIBILITY_VERSION  CURRENCY_FORMATION_VERSION + 11
-#define BLOCKCHAIN_STORAGE_MINOR_COMPATIBILITY_VERSION  2
+#define BLOCKCHAIN_STORAGE_MINOR_COMPATIBILITY_VERSION  3
 
 
 #define BC_OFFERS_CURRENT_OFFERS_SERVICE_ARCHIVE_VER    CURRENCY_FORMATION_VERSION + BLOCKCHAIN_STORAGE_MAJOR_COMPATIBILITY_VERSION + 9
 #define BC_OFFERS_CURRENCY_MARKET_FILENAME              "market.bin"
 
 
-#define WALLET_FILE_SERIALIZATION_VERSION               168
-#define WALLET_FILE_LAST_SUPPORTED_VERSION              165
+#define WALLET_FILE_SERIALIZATION_VERSION               172
+#define WALLET_FILE_LAST_SUPPORTED_VERSION              172
 
 #define CURRENT_MEMPOOL_ARCHIVE_VER                     (CURRENCY_FORMATION_VERSION+31)
 
@@ -268,19 +315,36 @@
 #define ZANO_HARDFORK_01_AFTER_HEIGHT                   194624    // 2019-09-21 20:25:16
 #define ZANO_HARDFORK_02_AFTER_HEIGHT                   999999    // 2021-04-05 09:11:45
 #define ZANO_HARDFORK_03_AFTER_HEIGHT                   1082577   // 2021-06-01 23:28:10
+
 #define ZANO_HARDFORK_04_AFTER_HEIGHT                   2555000   // 2024-03-21 11:49:55
 #define ZANO_HARDFORK_04_TIMESTAMP_ACTUAL               1711021795ull // block 2555000, 2024-03-21 11:49:55 UTC
-#define ZANO_HARDFORK_05_AFTER_HEIGHT                   999999999999999999  
-#define ZANO_HARDFORK_05_MIN_BUILD_VER                  354
+
+#define ZANO_HARDFORK_05_AFTER_HEIGHT                   3076400   // 2025-03-18 15:13:39
+#define ZANO_HARDFORK_05_MIN_BUILD_VER                  382
+
+#define ZANO_HARDFORK_06_AFTER_HEIGHT                   3833000
+#define ZANO_HARDFORK_06_MIN_BUILD_VER                  501
+
+#define ZANO_HARDFORK_07_AFTER_HEIGHT                   3833000
+#define ZANO_HARDFORK_07_MIN_BUILD_VER                  600
 #else
 // Testnet
 #define ZANO_HARDFORK_01_AFTER_HEIGHT                   0
 #define ZANO_HARDFORK_02_AFTER_HEIGHT                   0
 #define ZANO_HARDFORK_03_AFTER_HEIGHT                   0
-#define ZANO_HARDFORK_04_AFTER_HEIGHT                   100
-#define ZANO_HARDFORK_04_TIMESTAMP_ACTUAL               1712800000ull // block 100, 2024-00-00 00:00:00 UTC
-#define ZANO_HARDFORK_05_AFTER_HEIGHT                   200
-#define ZANO_HARDFORK_05_MIN_BUILD_VER                  356
+
+#define ZANO_HARDFORK_04_AFTER_HEIGHT                   850
+#define ZANO_HARDFORK_04_TIMESTAMP_ACTUAL               1778000000ull // 2026-05-05 16:53:20 UTC
+
+#define ZANO_HARDFORK_05_AFTER_HEIGHT                   851
+#define ZANO_HARDFORK_05_MIN_BUILD_VER                  474
+
+#define ZANO_HARDFORK_06_AFTER_HEIGHT                   1050
+#define ZANO_HARDFORK_06_MIN_BUILD_VER                  474
+
+#define ZANO_HARDFORK_07_AFTER_HEIGHT                   500000
+#define ZANO_HARDFORK_07_MIN_BUILD_VER                  600
+
 #endif
 
 
@@ -290,13 +354,16 @@
 #define ZANO_HARDFORK_03                                3
 #define ZANO_HARDFORK_04_ZARCANUM                       4
 #define ZANO_HARDFORK_05                                5
-#define ZANO_HARDFORKS_TOTAL                            6
+#define ZANO_HARDFORK_06                                6
+#define ZANO_HARDFORK_07                                7
+#define ZANO_HARDFORKS_TOTAL                            8
 
-
+#define ZANO_ACTIVE_HARDFORKS_TOTAL                     8
 
 
 static_assert(CURRENCY_MINER_TX_MAX_OUTS <= CURRENCY_TX_MAX_ALLOWED_OUTS, "Miner tx must obey normal tx max outs limit");
 static_assert(PREMINE_AMOUNT / WALLET_MAX_ALLOWED_OUTPUT_AMOUNT < CURRENCY_MINER_TX_MAX_OUTS, "Premine can't be divided into reasonable number of outs");
+static_assert(WALLET_KDF_ROMIX_N_LOG2 <= WALLET_KDF_ROMIX_N_LOG2_MAX, "Default wallet KDF cost must fit the wallet-file load policy");
 
 #define CURRENCY_RELAY_TXS_MAX_COUNT                    5
 

@@ -1,4 +1,3 @@
-
 // Copyright (c) 2020-2024 Zano Project
 // Copyright (c) 2020-2024 sowle (val@zano.org, crypto.sowle@gmail.com)
 // Distributed under the MIT/X11 software license, see the accompanying
@@ -498,7 +497,7 @@ namespace crypto
     {
       MP_type result = 0;
       static_assert(sizeof result >= sizeof *this, "size missmatch"); // to avoid using types less than uint256_t
-      unsigned int sz = sizeof *this / sizeof(boost::multiprecision::limb_type);
+      size_t sz = sizeof *this / sizeof(boost::multiprecision::limb_type);
       result.backend().resize(sz, sz);
       memcpy(result.backend().limbs(), &m_s[0], sizeof *this);
       result.backend().normalize();
@@ -613,8 +612,8 @@ namespace crypto
       zero();
     }
 
-    explicit point_t(const crypto::key_image& ki) // can throw std::runtime_error
-      : point_t(static_cast<const crypto::public_key&>(static_cast<const ec_point&>(ki)))
+    explicit point_t(const key_image& ki) // can throw std::runtime_error
+      : point_t(static_cast<const public_key&>(static_cast<const ec_point&>(ki)))
     {
     }
 
@@ -1029,11 +1028,11 @@ namespace crypto
     // zeroes all elements
     void zero()
     {
-      PUSH_WARNINGS
+      PUSH_GCC_WARNINGS
       DISABLE_GCC_WARNING(class-memaccess)
       size_t size_bytes = sizeof(scalar_t) * size();
       memset(data(), 0, size_bytes);
-      POP_WARNINGS
+      POP_GCC_WARNINGS
     }
 
     // invert all elements in-place efficiently: 4*N muptiplications + 1 inversion
@@ -1152,7 +1151,7 @@ namespace crypto
       return scalar_t(crypto::cn_fast_hash(str.c_str(), str.size())); // will reduce mod L
     }
 
-    static crypto::hash h(const std::string& str)
+    static hash h(const std::string& str)
     {
       return crypto::cn_fast_hash(str.c_str(), str.size());
     }
@@ -1195,14 +1194,14 @@ namespace crypto
         m_elements.emplace_back(pk);
       }
 
-      void add_eth_pub_key(const eth_public_key& epk)
+      void add_eth_pub_key(const crypto::eth_public_key& epk)
       {
         static_assert(sizeof(item_t)  == 32, "unexpected size of hs_t::item_t");
-        static_assert(sizeof epk == 33, "unexpected size of eth_public_key");
+        static_assert(sizeof epk.data == 33, "unexpected size of eth_public_key");
         m_elements.emplace_back(c_scalar_0);
         m_elements.emplace_back(c_scalar_0);
         char* p = m_elements[m_elements.size() - 2].c; // pointer to the first of the two added items
-        memcpy(p, &epk, sizeof epk);
+        memcpy(p, &epk.data, sizeof epk.data);
       }
 
       void add_key_image(const crypto::key_image& ki)
@@ -1238,7 +1237,7 @@ namespace crypto
           m_elements.emplace_back(key_image_array[i]);
       }
 
-      void add_hash(const crypto::hash& h)
+      void add_hash(const hash& h)
       {
         m_elements.emplace_back(h);
       }
@@ -1258,10 +1257,10 @@ namespace crypto
         return scalar_t(hash); // this will reduce to L
       }
       
-      crypto::hash calc_hash_no_reduce(bool clear = true)
+      hash calc_hash_no_reduce(bool clear = true)
       {
         size_t data_size_bytes = m_elements.size() * sizeof(item_t);
-        crypto::hash result;
+        hash result;
         crypto::cn_fast_hash(m_elements.data(), data_size_bytes, result);
         if (clear)
           this->clear();
@@ -1299,6 +1298,31 @@ namespace crypto
       std::vector<item_t> m_elements;
     };
 
+    //
+    // h - hash to crypto::hash [0..2^256-1], no reduce
+    //
+
+    static hash h(const char(&str32)[32], const crypto::hash& h)
+    {
+      hs_t hs_calculator(2);
+      hs_calculator.add_32_chars(str32);
+      hs_calculator.add_hash(h);
+      return hs_calculator.calc_hash_no_reduce();
+    }
+
+    static hash h(const char(&str32)[32], const crypto::hash& h, const uint64_t i)
+    {
+      hs_t hs_calculator(3);
+      hs_calculator.add_32_chars(str32);
+      hs_calculator.add_hash(h);
+      hs_calculator.add_scalar(scalar_t(i));
+      return hs_calculator.calc_hash_no_reduce();
+    }
+
+    //
+    // hs - hash to scalar [0..l-1]
+    //
+    
     static scalar_t hs(const scalar_t& s, const std::vector<point_t>& ps0, const std::vector<point_t>& ps1)
     {
       hs_t hs_calculator(3);
@@ -1393,6 +1417,10 @@ namespace crypto
       return hs_calculator.calc_hash();
     }
 
+    //
+    // hp - hash to point (group element)
+    //
+
     static point_t hp(const point_t& p)
     {
       point_t result;
@@ -1438,6 +1466,16 @@ namespace crypto
   {
     // hs won't touch memory if size is 0, so it's safe
     return hash_helper_t::hs(data(), sizeof(scalar_t) * size());
-  } 
+  }
+
+  inline bool pub_key_mul8(const public_key& pk_1div8, public_key& result)
+  {
+    point_t p{};
+    if (!p.from_public_key(pk_1div8))
+      return false;
+    p.modify_mul8();
+    result = p.to_public_key();
+    return true;
+  }
 
 } // namespace crypto

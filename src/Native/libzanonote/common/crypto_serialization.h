@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2024 Zano Project
+// Copyright (c) 2014-2025 Zano Project
 // Copyright (c) 2014-2018 The Louisdor Project
 // Copyright (c) 2012-2013 The Cryptonote developers
 // Distributed under the MIT/X11 software license, see the accompanying
@@ -14,7 +14,7 @@
 
 #include "serialization/serialization.h"
 #include "serialization/debug_archive.h"
-#include "crypto/chacha8.h"
+#include "crypto/chacha.h"
 #include "crypto/crypto.h"
 #include "crypto/hash.h"
 #include "crypto/range_proofs.h"
@@ -22,6 +22,7 @@
 #include "crypto/zarcanum.h"
 #include "crypto/one_out_of_many_proofs.h"
 #include "crypto/eth_signature.h"
+#include "crypto/eddsa_signature.h"
 #include "boost_serialization_maps.h"
 #include "serialization/keyvalue_enable_POD_serialize_as_string.h"
 //
@@ -182,6 +183,9 @@ namespace crypto
       BOOST_SERIALIZE(c)
       BOOST_SERIALIZE(y)
     END_BOOST_SERIALIZATION()
+
+    bool is_zero() const { return c.is_zero() && y.is_zero(); }
+    bool operator== (const generic_schnorr_sig_s& rhs) const { return c == rhs.c && y == rhs.y; }
   };
 
   struct generic_double_schnorr_sig_s : public generic_double_schnorr_sig
@@ -196,6 +200,23 @@ namespace crypto
       BOOST_SERIALIZE(c)
       BOOST_SERIALIZE(y0)
       BOOST_SERIALIZE(y1)
+    END_BOOST_SERIALIZATION()
+  };
+
+  struct generic_linear_composition_and_schnorr_sig_s : public generic_linear_composition_and_schnorr_sig
+  {
+    BEGIN_SERIALIZE_OBJECT()
+      FIELD(c)
+      FIELD(y0)
+      FIELD(y1)
+      FIELD(y2)
+    END_SERIALIZE()
+
+    BEGIN_BOOST_SERIALIZATION()
+      BOOST_SERIALIZE(c)
+      BOOST_SERIALIZE(y0)
+      BOOST_SERIALIZE(y1)
+      BOOST_SERIALIZE(y2)
     END_BOOST_SERIALIZATION()
   };
 
@@ -220,9 +241,28 @@ namespace crypto
     END_BOOST_SERIALIZATION()
   };
 
+  // helper functions
+
+  // plain serialization for generic_schnorr_sig_s as hex-encoded 64-bytes string, consisting of two 32-bytes integers (c, y)
+  inline std::string generic_schnorr_sig_s_to_hex_string(const generic_schnorr_sig_s& s) 
+  {
+    return crypto::pod_to_hex(s.c) + crypto::pod_to_hex(s.y);
+  }
+
+  inline generic_schnorr_sig_s generic_schnorr_sig_s_from_hex_string(const std::string& hex_str)
+  {
+    generic_schnorr_sig_s result{};
+    if (hex_str.size() != 2 * (sizeof(result.c) + sizeof(result.y)))
+      return result;
+    crypto::parse_tpod_from_hex_string(hex_str.substr(0, 2 * sizeof(result.c)), result.c);
+    crypto::parse_tpod_from_hex_string(hex_str.substr(2 * sizeof(result.c)), result.y);
+    return result;
+  }
+
+
 } // namespace crypto
 
-BLOB_SERIALIZER(crypto::chacha8_iv);
+BLOB_SERIALIZER(crypto::chacha_iv);
 BLOB_SERIALIZER(crypto::hash);
 BLOB_SERIALIZER(crypto::public_key);
 BLOB_SERIALIZER(crypto::secret_key);
@@ -233,6 +273,8 @@ BLOB_SERIALIZER(crypto::scalar_t);
 BLOB_SERIALIZER(crypto::point_t);
 BLOB_SERIALIZER(crypto::eth_public_key);
 BLOB_SERIALIZER(crypto::eth_signature);
+BLOB_SERIALIZER(crypto::eddsa_public_key);
+BLOB_SERIALIZER(crypto::eddsa_signature);
 
 VARIANT_TAG(debug_archive, crypto::hash, "hash");
 VARIANT_TAG(debug_archive, crypto::public_key, "public_key");

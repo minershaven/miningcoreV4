@@ -55,6 +55,11 @@ namespace currency
     m_creation_timestamp = time(NULL);
   }
   //-----------------------------------------------------------------
+  uint64_t account_base::get_createtime_rounded() const
+  {
+    return round_timestamp_to_brain_date_quantum(m_creation_timestamp);
+  }
+  //-----------------------------------------------------------------
   const account_keys& account_base::get_keys() const
   {
     return m_keys;
@@ -62,12 +67,12 @@ namespace currency
   //-----------------------------------------------------------------
   void account_base::crypt_with_pass(const void* scr_data, std::size_t src_length, void* dst_data, const std::string& password)
   {
-    crypto::chacha8_key key = AUTO_VAL_INIT(key);
-    crypto::generate_chacha8_key(password, key);
+    crypto::chacha_key key{};
+    crypto::generate_chacha_key_legacy(password, key);
     crypto::hash pass_hash = crypto::cn_fast_hash(password.data(), password.size());
-    crypto::chacha8_iv  iv = AUTO_VAL_INIT(iv);
-    CHECK_AND_ASSERT_THROW_MES(sizeof(pass_hash) >= sizeof(iv), "Invalid configuration: hash size is less than keys_file_data.iv");
-    iv = *((crypto::chacha8_iv*)&pass_hash);
+    crypto::chacha_iv iv{};
+    static_assert(sizeof(pass_hash) >= sizeof(iv), "Invalid configuration: hash size is less than keys_file_data.iv");
+    iv = *((crypto::chacha_iv*)&pass_hash);
     crypto::chacha8(scr_data, src_length, key, iv, (char*)dst_data);
   }
   //-----------------------------------------------------------------
@@ -240,6 +245,30 @@ namespace currency
     else
       m_keys.account_address.flags &= ~ACCOUNT_PUBLIC_ADDRESS_FLAG_AUDITABLE;
 
+    return true;
+  }
+  //-----------------------------------------------------------------
+  bool account_base::restore_from_secret_derivation(const std::string& secrete_keys_derivation, bool is_auditable, uint64_t creation_timestamp)
+  {
+    m_keys_seed_binary.assign(secrete_keys_derivation.begin(), secrete_keys_derivation.end());
+    bool r = restore_keys(m_keys_seed_binary);
+    CHECK_AND_ASSERT_MES(r, false, "restore_keys failed");
+    
+    if (is_auditable)
+    {
+      m_keys.account_address.flags |= ACCOUNT_PUBLIC_ADDRESS_FLAG_AUDITABLE;
+    }
+    
+    m_creation_timestamp = creation_timestamp;
+
+    return true;
+  }
+  //-----------------------------------------------------------------
+  bool account_base::get_secret_derivation(std::string& secrete_keys_derivation, bool& is_auditable, uint64_t& creation_timestamp)
+  {
+    secrete_keys_derivation.assign(m_keys_seed_binary.begin(), m_keys_seed_binary.end());
+    is_auditable = m_keys.account_address.flags& ACCOUNT_PUBLIC_ADDRESS_FLAG_AUDITABLE ? true:false;
+    creation_timestamp = m_creation_timestamp;
     return true;
   }
   //-----------------------------------------------------------------

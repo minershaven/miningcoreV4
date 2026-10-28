@@ -61,7 +61,7 @@ namespace epee
       if(!stg.get_value(pname, blob, hparent_section))
         return false;
       CHECK_AND_ASSERT_MES(blob.size() == sizeof(d), false, "unserialize_t_val_as_blob: size of " << typeid(t_type).name() << " = " << sizeof(t_type) << ", but stored blod size = " << blob.size() << ", value name = " << pname);
-      d = *(const t_type*)blob.data();
+      std::memcpy(std::addressof(d), blob.data(), sizeof(t_type)); //d = *(const t_type*)blob.data();
       return true;
     } 
     //-------------------------------------------------------------------------------------------------------------------
@@ -76,7 +76,7 @@ namespace epee
     template<class serializible_type, class t_storage>
     static bool unserialize_t_obj(serializible_type& obj, t_storage& stg, typename t_storage::hsection hparent_section, const char* pname)
     {
-      typename t_storage::hsection	hchild_section = stg.open_section(pname, hparent_section, true);
+      typename t_storage::hsection	hchild_section = stg.open_section(pname, hparent_section, false);
       if(!hchild_section) return false;
       return obj._load(stg, hchild_section);
     }
@@ -117,7 +117,7 @@ namespace epee
     static bool unserialize_stl_container_t_val(stl_container& container, t_storage& stg, typename t_storage::hsection hparent_section, const char* pname)
     {
       container.clear();
-      typename stl_container::value_type exchange_val;
+      typename stl_container::value_type exchange_val{};
       typename t_storage::harray hval_array = stg.get_first_value(pname, exchange_val, hparent_section);
       if(!hval_array) return false;
       container.push_back(std::move(exchange_val));
@@ -340,6 +340,21 @@ namespace epee
 
       }
 
+      // Removes a previously-serialized entry from the doc storage so it does not
+      // appear in the generated example JSON or descriptions. No-op unless the
+      // storage opted into documentation (use_descriptions == true_type).
+      template<class t_storage>
+      static bool serialize_and_hide(t_storage& stg, typename t_storage::hsection hparent_section, const char* pname)
+      {
+        if constexpr (t_storage::use_descriptions::value)
+        {
+          stg.remove_entry_from_doc(hparent_section, pname);
+          return true;
+        }
+        else
+          return false;
+      }
+
       template<class t_type, class t_storage>
       static bool serialize_stl_container_pod_val_as_blob(const t_type& d, t_storage& stg, typename t_storage::hsection hparent_section, const char* pname)
       {
@@ -403,6 +418,10 @@ namespace epee
       static bool serialize_ephemeral(t_type& d, t_storage& stg, typename t_storage::hsection hparent_section, const char* pname, cb_serialize cb_s)
       {
         //just a stub here
+        t_type_stored a{};
+        bool r = epee::serialization::selector<false>::serialize(a, stg, hparent_section, pname);
+        if (r)
+          throw std::runtime_error(std::string("KV unserialize: loading ephemeral ") + pname);
         return true;
       }
     };

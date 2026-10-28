@@ -2,8 +2,8 @@
 
 #if defined(_MSC_VER)
 
-#define PUSH_WARNINGS __pragma(warning(push))
-#define POP_WARNINGS __pragma(warning(pop))
+#define PUSH_VS_WARNINGS __pragma(warning(push))
+#define POP_VS_WARNINGS __pragma(warning(pop))
 
 #define PUSH_GCC_WARNINGS
 #define POP_GCC_WARNINGS
@@ -21,8 +21,8 @@
 
 #include <boost/preprocessor/stringize.hpp>
 
-#define PUSH_WARNINGS
-#define POP_WARNINGS 
+#define PUSH_VS_WARNINGS
+#define POP_VS_WARNINGS 
 
 #define PUSH_GCC_WARNINGS _Pragma("GCC diagnostic push")
 #define POP_GCC_WARNINGS _Pragma("GCC diagnostic pop")

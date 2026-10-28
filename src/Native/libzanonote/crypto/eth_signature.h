@@ -34,10 +34,10 @@ namespace crypto
   //bool _eth_secret_key_to_public_key(const eth_secret_key& sec_key, eth_public_key& pub_key) noexcept;
 
   // generates secp256k1 ECDSA signature
-  bool generate_eth_signature(const crypto::hash& m, const eth_secret_key& sec_key, eth_signature& sig) noexcept;
+  bool generate_eth_signature(const hash& m, const eth_secret_key& sec_key, eth_signature& sig) noexcept;
 
   // verifies secp256k1 ECDSA signature
-  bool verify_eth_signature(const crypto::hash& m, const eth_public_key& pub_key, const eth_signature& sig) noexcept;
+  bool verify_eth_signature(const hash& m, const eth_public_key& pub_key, const eth_signature& sig) noexcept;
 
 
   inline bool operator==(const eth_public_key& lhs, const eth_public_key& rhs)
@@ -56,6 +56,16 @@ namespace crypto
   }
 
   inline bool operator!=(const eth_secret_key& lhs, const eth_secret_key& rhs)
+  {
+    return !(lhs == rhs);
+  }
+
+  inline bool operator==(const eth_signature& lhs, const eth_signature& rhs)
+  {
+    return memcmp(lhs.data, rhs.data, sizeof lhs.data) == 0;
+  }
+
+  inline bool operator!=(const eth_signature& lhs, const eth_signature& rhs)
   {
     return !(lhs == rhs);
   }

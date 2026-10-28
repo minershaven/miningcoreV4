@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2018 Zano Project
+// Copyright (c) 2014-2025 Zano Project
 // Copyright (c) 2014-2018 The Louisdor Project
 // Copyright (c) 2012-2013 The Cryptonote developers
 // Distributed under the MIT/X11 software license, see the accompanying
@@ -9,7 +9,7 @@
 #include <boost/uuid/uuid.hpp>
 #include "serialization/keyvalue_serialization.h"
 #include "misc_language.h"
-#include "currency_config.h"
+#include "currency_core/currency_config.h"
 #include "crypto/crypto.h"
 
 namespace nodetool
@@ -60,7 +60,7 @@ namespace nodetool
     return  memcmp(&a, &b, sizeof(a)) == 0;
   }
   inline 
-  std::string print_peerlist_to_string(const std::list<peerlist_entry>& pl)
+  std::string print_peerlist_to_string(const std::vector<peerlist_entry>& pl)
   {
     time_t now_time = 0;
     time(&now_time);
@@ -68,7 +68,7 @@ namespace nodetool
     ss << std::setfill ('0') << std::setw (8) << std::hex << std::noshowbase;
     BOOST_FOREACH(const peerlist_entry& pe, pl)
     {
-      ss << pe.id << "\t" << epee::string_tools::get_ip_string_from_int32(pe.adr.ip) << ":" << boost::lexical_cast<std::string>(pe.adr.port) << " \tlast_seen: " << epee::misc_utils::get_time_interval_string(now_time - pe.last_seen) << std::endl;
+      ss << pe.id << "\t" << epee::string_tools::get_ip_string_from_int32(pe.adr.ip) << ":" << boost::lexical_cast<std::string>(pe.adr.port) << " \tlast_seen: " << (pe.last_seen == 0 ? std::string("never") :  epee::misc_utils::get_time_interval_string(now_time - pe.last_seen)) << std::endl;
     }
     return ss.str();
   }
@@ -83,13 +83,14 @@ namespace nodetool
       KV_SERIALIZE(config_id)
     END_KV_SERIALIZE_MAP()
 
-    uint32_t connections_count;
-    uint32_t connection_timeout;
-    uint32_t ping_connection_timeout;
-    uint32_t handshake_interval;
-    uint32_t packet_max_size;
-    uint32_t config_id;
-    uint32_t send_peerlist_sz;
+    uint32_t connections_count = 0;
+    uint32_t connection_timeout = 0;
+    uint32_t ping_connection_timeout = 0;
+    uint32_t handshake_interval = 0;
+    uint32_t packet_max_size = 0;
+    uint32_t config_id = 0;
+    uint32_t send_peerlist_sz = 0;
+    uint32_t default_max_inc_count = 0;
   };
 
   struct basic_node_data
@@ -206,7 +207,7 @@ namespace nodetool
     {
       basic_node_data node_data;
       t_playload_type payload_data;
-      std::list<peerlist_entry> local_peerlist;
+      std::vector<peerlist_entry> local_peerlist;
       maintainers_entry maintrs_entry;
 
       BEGIN_KV_SERIALIZE_MAP()
@@ -242,7 +243,7 @@ namespace nodetool
     {
       int64_t local_time;
       t_playload_type payload_data;
-      std::list<peerlist_entry> local_peerlist; 
+      std::vector<peerlist_entry> local_peerlist; 
       maintainers_entry maintrs_entry;
 
       BEGIN_KV_SERIALIZE_MAP()
@@ -288,6 +289,29 @@ namespace nodetool
       END_KV_SERIALIZE_MAP()    
     };
   };
+
+
+
+  struct p2p_config_data
+  {
+    std::optional<uint64_t> incoming_connections_limit;
+    std::optional<uint64_t> outgoing_connections_limit;
+    std::vector<std::string> ip_black_list;
+    std::optional<bool> use_only_priority_peers = false;             //allow to make outgoing connections only to the peers listed in ip_priority_list
+    std::vector<std::string> priority_peers_list;
+
+    BEGIN_KV_SERIALIZE_MAP()
+      KV_SERIALIZE(incoming_connections_limit)
+      KV_SERIALIZE(outgoing_connections_limit)
+      KV_SERIALIZE(ip_black_list)
+      KV_SERIALIZE(use_only_priority_peers)
+      KV_SERIALIZE(priority_peers_list)
+    END_KV_SERIALIZE_MAP()
+  };
+
+
+
+
 
   
 #ifdef ALLOW_DEBUG_COMMANDS
@@ -359,8 +383,8 @@ namespace nodetool
 
     struct response
     {
-      std::list<peerlist_entry> local_peerlist_white; 
-      std::list<peerlist_entry> local_peerlist_gray; 
+      std::vector<peerlist_entry> local_peerlist_white; 
+      std::vector<peerlist_entry> local_peerlist_gray; 
       std::list<connection_entry> connections_list; 
       peerid_type my_id;
       uint64_t    local_time;
@@ -402,65 +426,33 @@ namespace nodetool
   /************************************************************************/
   /*                                                                      */
   /************************************************************************/
-  struct COMMAND_REQUEST_LOG
+  struct COMMAND_REQUEST_ANONYMIZED_PEERS
   {
-    const static int ID = P2P_COMMANDS_POOL_BASE + 7;
+    const static int ID = P2P_COMMANDS_POOL_BASE + 100;
 
     struct request
     {
-      proof_of_trust  tr;
-      uint64_t        log_chunk_offset;
-      uint64_t        log_chunk_size;
-
       BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(tr)
-        KV_SERIALIZE(log_chunk_offset)
-        KV_SERIALIZE(log_chunk_size)
       END_KV_SERIALIZE_MAP()
     };
 
+    struct anonymized_peer_info
+    {
+      uint64_t  time_started;
+      bool      inbound;
+
+      BEGIN_KV_SERIALIZE_MAP()
+        KV_SERIALIZE(time_started)
+        KV_SERIALIZE(inbound)
+      END_KV_SERIALIZE_MAP()
+    };
+    
     struct response
     {
-      int64_t     current_log_level;
-      uint64_t    current_log_size;
-      std::string error;
-      std::string log_chunk;
+      std::vector<anonymized_peer_info> peers;
 
       BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(current_log_level)
-        KV_SERIALIZE(current_log_size)
-        KV_SERIALIZE(error)
-        KV_SERIALIZE(log_chunk)
-      END_KV_SERIALIZE_MAP()
-    };
-  };
-
-  /************************************************************************/
-  /*                                                                      */
-  /************************************************************************/
-  struct COMMAND_SET_LOG_LEVEL
-  {
-    const static int ID = P2P_COMMANDS_POOL_BASE + 8;
-
-    struct request
-    {
-      proof_of_trust  tr;
-      int64_t         new_log_level;
-
-      BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(tr)
-        KV_SERIALIZE(new_log_level)
-      END_KV_SERIALIZE_MAP()
-    };
-
-    struct response
-    {
-      int64_t     old_log_level;
-      int64_t     current_log_level;
-
-      BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(old_log_level)
-        KV_SERIALIZE(current_log_level)
+        KV_SERIALIZE(peers)
       END_KV_SERIALIZE_MAP()
     };
   };

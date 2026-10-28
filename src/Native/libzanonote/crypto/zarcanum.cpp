@@ -4,11 +4,11 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 //
 // Note: This file originates from tests/functional_tests/crypto_tests.cpp 
-#include "misc_log_ex.h"
+#include "epee/include/misc_log_ex.h"
 #include "zarcanum.h"
 #include "range_proofs.h"
-#include "currency_core/crypto_config.h"    // TODO: move it to the crypto
-#include "common/crypto_stream_operators.h" // TODO: move it to the crypto
+#include "../currency_core/crypto_config.h"    // TODO: move it to the crypto
+#include "../common/crypto_stream_operators.h" // TODO: move it to the crypto
 
 #if 0
 #  define DBG_VAL_PRINT(x) std::cout << std::setw(30) << std::left << #x ": " << x << std::endl

@@ -1,5 +1,3 @@
-// Copyright (c) 2014-2018 Zano Project
-// Copyright (c) 2014-2018 The Louisdor Project
 // Copyright (c) 2012-2013 The Cryptonote developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
@@ -24,7 +22,7 @@ static inline const void *cpadd(const void *p, size_t i) {
   return (const char *) p + i;
 }
 
-PUSH_WARNINGS
+PUSH_VS_WARNINGS
 DISABLE_VS_WARNINGS(4267)
 static_assert(sizeof(size_t) == 4 || sizeof(size_t) == 8, "size_t must be 4 or 8 bytes long");
 static inline void place_length(uint8_t *buffer, size_t bufsize, size_t length) {
@@ -34,7 +32,7 @@ static inline void place_length(uint8_t *buffer, size_t bufsize, size_t length) 
     *(uint64_t *) padd(buffer, bufsize - 8) = swap64be(length);
   }
 }
-POP_WARNINGS
+POP_VS_WARNINGS
 
 #pragma pack(push, 1)
 union hash_state {
@@ -42,7 +40,7 @@ union hash_state {
   uint64_t w[25];
 };
 #pragma pack(pop)
-//static_assert(sizeof(union hash_state) == 200, "Invalid structure size");
+static_assert(sizeof(union hash_state) == 200, "Invalid structure size");
 
 void hash_permutation(union hash_state *state);
 void hash_process(union hash_state *state, const uint8_t *buf, size_t count);

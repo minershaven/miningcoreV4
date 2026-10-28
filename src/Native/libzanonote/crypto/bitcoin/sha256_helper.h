@@ -10,16 +10,16 @@
 
 namespace crypto {
 
-  inline void sha256_hash(const void *data, std::size_t length, crypto::hash &h) 
+  inline void sha256_hash(const void *data, std::size_t length, hash &h) 
   {
     CSHA256 sh;
     sh.Write((const unsigned char*)data, length);
     sh.Finalize((unsigned char* )&h);
   }
 
-  inline crypto::hash sha256_hash(const void *data, std::size_t length) 
+  inline hash sha256_hash(const void *data, std::size_t length) 
   {
-    crypto::hash h;
+    hash h;
     sha256_hash(data, length, h);
     return h;
   }
