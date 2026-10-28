@@ -716,7 +716,7 @@ public class ZanoPool : PoolBase
                     // Nicehash's stupid validator insists on "error" property present
                     // in successful responses which is a violation of the JSON-RPC spec
                     // [Respect the goddamn standards Nicehack :(]
-                    var response = new JsonRpcResponse<object[]>(job);
+                    var response = new JsonRpcResponse<object[]>(job, 0);   // EthProxy clients only accept pushed work with id 0
 
                     if(context.IsNicehash || poolConfig.EnableAsicBoost == true)
                     {
@@ -968,7 +968,7 @@ public class ZanoPool : PoolBase
                     // Nicehash's stupid validator insists on "error" property present
                     // in successful responses which is a violation of the JSON-RPC spec
                     // [Respect the goddamn standards Nicehack :(]
-                    var response = new JsonRpcResponse<object[]>(job);
+                    var response = new JsonRpcResponse<object[]>(job, 0);   // EthProxy clients only accept pushed work with id 0
 
                     if(context.IsNicehash || poolConfig.EnableAsicBoost == true)
                     {
