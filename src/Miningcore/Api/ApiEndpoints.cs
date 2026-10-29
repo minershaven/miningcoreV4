@@ -29,6 +29,9 @@ public static class ApiEndpoints
 {
     private static readonly ILogger logger = LogManager.GetCurrentClassLogger();
 
+    // Start of the effort window for pools that have not found a block yet
+    private static readonly DateTime EffortEpoch = new(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
     public static void MapMiningcoreApi(this IEndpointRouteBuilder app)
     {
         var api = app.MapGroup("/api");
@@ -352,9 +355,10 @@ public static class ApiEndpoints
                             result.PaymentProcessing.PayoutSchemeConfig.BlockFinderPercentage = null;
                     }
 
-                    if (lastBlockTime.HasValue && pool != null)
+                    if (pool != null)
                     {
-                        var startTime = lastBlockTime.Value;
+                        // before the pool's first block, effort counts from the first share
+                        var startTime = lastBlockTime ?? EffortEpoch;
                         var poolEffort = await cf.Run(con => shareRepo.GetEffortBetweenCreatedAsync(con, config.Id, pool.ShareMultiplier, startTime, clock.Now, ct));
                         if (poolEffort.HasValue)
                             result.PoolEffort = poolEffort.Value;
@@ -419,9 +423,10 @@ public static class ApiEndpoints
                     response.Pool.PaymentProcessing.PayoutSchemeConfig.BlockFinderPercentage = null;
             }
 
-            if (lastBlockTime.HasValue)
+            if (poolInstance != null)
             {
-                var startTime = lastBlockTime.Value;
+                // before the pool's first block, effort counts from the first share
+                var startTime = lastBlockTime ?? EffortEpoch;
                 var poolEffort = await cf.Run(con => shareRepo.GetEffortBetweenCreatedAsync(con, pool.Id, poolInstance.ShareMultiplier, startTime, clock.Now, ct));
                 if (poolEffort.HasValue)
                     response.Pool.PoolEffort = poolEffort.Value;
@@ -670,6 +675,7 @@ public static class ApiEndpoints
 
         poolsGroup.MapGet("/{poolId}/miners/{address}", async (
             string poolId, string address,
+            [FromServices] ConcurrentDictionary<string, IMiningPool> poolsDict,
             [FromServices] ClusterConfig clusterConfig,
             [FromServices] IConnectionFactory cf,
             [FromServices] IStatsRepository statsRepo,
@@ -711,12 +717,17 @@ public static class ApiEndpoints
                 }
 
                 var lastBlockTime = await cf.Run(con => blocksRepo.GetLastPoolBlockTimeAsync(con, pool.Id, ct));
-                if (lastBlockTime.HasValue)
                 {
-                    var startTime = lastBlockTime.Value;
+                    // before the pool's first block, effort counts from the first share
+                    var startTime = lastBlockTime ?? EffortEpoch;
                     var minerEffort = await cf.Run(con => shareRepo.GetMinerEffortBetweenCreatedAsync(con, pool.Id, address, startTime, clock.Now, ct));
+
+                    // shares are stored as difficulty / ShareMultiplier (e.g. 65536 for scrypt),
+                    // so scale back up the same way pool effort does
+                    var shareMultiplier = poolsDict.TryGetValue(pool.Id, out var poolInstance) ? poolInstance.ShareMultiplier : 1d;
+
                     if (minerEffort.HasValue)
-                        stats.MinerEffort = minerEffort.Value;
+                        stats.MinerEffort = minerEffort.Value * shareMultiplier;
                 }
 
                 stats.PerformanceSamples = await GetMinerPerformanceInternal(cf, statsRepo, clock, mapper, perfMode.Value, pool, address, ct);
