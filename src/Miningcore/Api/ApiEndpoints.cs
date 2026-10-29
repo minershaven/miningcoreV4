@@ -32,6 +32,12 @@ public static class ApiEndpoints
     // Start of the effort window for pools that have not found a block yet
     private static readonly DateTime EffortEpoch = new(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
+    // Bitcoin-family shares are stored as stratumDifficulty / ShareMultiplier and the network
+    // difficulty comes from the block target, so both are already in the same units.
+    // Multiplying by ShareMultiplier (65536 for scrypt) inflated LTC/DOGE effort 65536x.
+    private static double EffortShareConst(IMiningPool pool) =>
+        pool is Blockchain.Bitcoin.BitcoinPool ? 1d : pool.ShareMultiplier;
+
     public static void MapMiningcoreApi(this IEndpointRouteBuilder app)
     {
         var api = app.MapGroup("/api");
@@ -359,7 +365,7 @@ public static class ApiEndpoints
                     {
                         // before the pool's first block, effort counts from the first share
                         var startTime = lastBlockTime ?? EffortEpoch;
-                        var poolEffort = await cf.Run(con => shareRepo.GetEffortBetweenCreatedAsync(con, config.Id, pool.ShareMultiplier, startTime, clock.Now, ct));
+                        var poolEffort = await cf.Run(con => shareRepo.GetEffortBetweenCreatedAsync(con, config.Id, EffortShareConst(pool), startTime, clock.Now, ct));
                         if (poolEffort.HasValue)
                             result.PoolEffort = poolEffort.Value;
                     }
@@ -427,7 +433,7 @@ public static class ApiEndpoints
             {
                 // before the pool's first block, effort counts from the first share
                 var startTime = lastBlockTime ?? EffortEpoch;
-                var poolEffort = await cf.Run(con => shareRepo.GetEffortBetweenCreatedAsync(con, pool.Id, poolInstance.ShareMultiplier, startTime, clock.Now, ct));
+                var poolEffort = await cf.Run(con => shareRepo.GetEffortBetweenCreatedAsync(con, pool.Id, EffortShareConst(poolInstance), startTime, clock.Now, ct));
                 if (poolEffort.HasValue)
                     response.Pool.PoolEffort = poolEffort.Value;
             }
@@ -675,7 +681,6 @@ public static class ApiEndpoints
 
         poolsGroup.MapGet("/{poolId}/miners/{address}", async (
             string poolId, string address,
-            [FromServices] ConcurrentDictionary<string, IMiningPool> poolsDict,
             [FromServices] ClusterConfig clusterConfig,
             [FromServices] IConnectionFactory cf,
             [FromServices] IStatsRepository statsRepo,
@@ -722,12 +727,10 @@ public static class ApiEndpoints
                     var startTime = lastBlockTime ?? EffortEpoch;
                     var minerEffort = await cf.Run(con => shareRepo.GetMinerEffortBetweenCreatedAsync(con, pool.Id, address, startTime, clock.Now, ct));
 
-                    // shares are stored as difficulty / ShareMultiplier (e.g. 65536 for scrypt),
-                    // so scale back up the same way pool effort does
-                    var shareMultiplier = poolsDict.TryGetValue(pool.Id, out var poolInstance) ? poolInstance.ShareMultiplier : 1d;
-
+                    // shares are stored as difficulty / ShareMultiplier, which is already in
+                    // network-difficulty units, so no scaling is needed here
                     if (minerEffort.HasValue)
-                        stats.MinerEffort = minerEffort.Value * shareMultiplier;
+                        stats.MinerEffort = minerEffort.Value;
                 }
 
                 stats.PerformanceSamples = await GetMinerPerformanceInternal(cf, statsRepo, clock, mapper, perfMode.Value, pool, address, ct);
