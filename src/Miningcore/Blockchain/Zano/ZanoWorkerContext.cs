@@ -24,6 +24,12 @@ public class ZanoWorkerContext : WorkerContextBase
     public int ProtocolVersion { get; set; }
 
     /// <summary>
+    /// Login used by rental services (e.g. MiningRigRentals) to test the pool with an
+    /// Ethereum-style placeholder address. Gets jobs, but its shares are never accepted.
+    /// </summary>
+    public bool IsTestLogin { get; set; }
+
+    /// <summary>
     /// Current N job(s) assigned to this worker
     /// </summary>
     public Queue<ZanoWorkerJob> validJobs { get; private set; } = new();

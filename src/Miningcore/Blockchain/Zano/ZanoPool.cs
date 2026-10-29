@@ -27,6 +27,9 @@ namespace Miningcore.Blockchain.Zano;
 [CoinFamily(CoinFamily.Zano)]
 public class ZanoPool : PoolBase
 {
+    private static readonly System.Text.RegularExpressions.Regex RentalTestLoginRegex =
+        new("^0x[0-9a-fA-F]{40}$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
     public ZanoPool(IComponentContext ctx,
         JsonSerializerSettings serializerSettings,
         IConnectionFactory cf,
@@ -129,6 +132,15 @@ public class ZanoPool : PoolBase
         // validate login
         var result = manager.ValidateAddress(addressToValidate);
 
+        // Rental services (MiningRigRentals) test pools with a fixed 0x... address.
+        // Let it connect and receive work so the test passes, but never credit its shares.
+        if(!result && RentalTestLoginRegex.IsMatch(addressToValidate ?? string.Empty))
+        {
+            result = true;
+            context.IsTestLogin = true;
+            logger.Info(() => $"[{connection.ConnectionId}] Accepting rental-service test login {addressToValidate} (shares will not be credited)");
+        }
+
         context.IsAuthorized = result;
 
         // Nicehash's stupid validator insists on "error" property present
@@ -215,6 +227,9 @@ public class ZanoPool : PoolBase
             // validate worker
             if(!context.IsAuthorized)
                 throw new StratumException(StratumError.MinusOne, "unauthorized");
+
+            if(context.IsTestLogin)
+                throw new StratumException(StratumError.MinusOne, "test login: connect with a valid Zano address to mine");
 
             // check age of submission (aged submissions are usually caused by high server load)
             var requestAge = clock.Now - tsRequest.Timestamp.UtcDateTime;
@@ -347,6 +362,15 @@ public class ZanoPool : PoolBase
         // validate login
         var result = manager.ValidateAddress(addressToValidate);
 
+        // Rental services (MiningRigRentals) test pools with a fixed 0x... address.
+        // Let it connect and receive work so the test passes, but never credit its shares.
+        if(!result && RentalTestLoginRegex.IsMatch(addressToValidate ?? string.Empty))
+        {
+            result = true;
+            context.IsTestLogin = true;
+            logger.Info(() => $"[{connection.ConnectionId}] Accepting rental-service test login {addressToValidate} (shares will not be credited)");
+        }
+
         context.IsSubscribed = result;
         context.IsAuthorized = result;
 
@@ -463,6 +487,15 @@ public class ZanoPool : PoolBase
         // validate login
         var result = manager.ValidateAddress(addressToValidate);
 
+        // Rental services (MiningRigRentals) test pools with a fixed 0x... address.
+        // Let it connect and receive work so the test passes, but never credit its shares.
+        if(!result && RentalTestLoginRegex.IsMatch(addressToValidate ?? string.Empty))
+        {
+            result = true;
+            context.IsTestLogin = true;
+            logger.Info(() => $"[{connection.ConnectionId}] Accepting rental-service test login {addressToValidate} (shares will not be credited)");
+        }
+
         context.IsSubscribed = result;
         context.IsAuthorized = result;
 
@@ -576,6 +609,9 @@ public class ZanoPool : PoolBase
             // validate worker
             if(!context.IsAuthorized)
                 throw new StratumException(StratumError.MinusOne, "unauthorized");
+
+            if(context.IsTestLogin)
+                throw new StratumException(StratumError.MinusOne, "test login: connect with a valid Zano address to mine");
 
             // check age of submission (aged submissions are usually caused by high server load)
             var requestAge = clock.Now - tsRequest.Timestamp.UtcDateTime;
