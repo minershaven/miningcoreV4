@@ -846,6 +846,22 @@ public class ZanoPool : PoolBase
             throw new StratumException(StratumError.MinusOne, $"protocol mismatch");
     }
 
+    /// <summary>
+    /// Move a connection that started with mining.subscribe (v2) to EthProxy (v1) when it
+    /// asks for work via eth_getWork / eth_submitWork, so new jobs are pushed in the
+    /// EthProxy format the client is actually using.
+    /// </summary>
+    protected void SwitchToEthProxy(StratumConnection connection, ZanoWorkerContext context)
+    {
+        if(context.ProtocolVersion == 1)
+            return;
+
+        if(context.ProtocolVersion == 2)
+            logger.Info(() => $"[{connection.ConnectionId}] Client uses EthProxy work requests after mining.subscribe; switching connection to EthProxy");
+
+        context.ProtocolVersion = 1;
+    }
+
     protected override async Task OnRequestAsync(StratumConnection connection,
         Timestamped<JsonRpcRequest> tsRequest, CancellationToken ct)
     {
@@ -908,7 +924,10 @@ public class ZanoPool : PoolBase
 
                 case ZanoStratumMethods.GetWork:
                 case ZanoStratumMethods.GetJob:
-                    EnsureProtocolVersion(context, 1);
+                    // Some clients (e.g. MiningRigRentals + TT-Miner) log in with
+                    // mining.subscribe/authorize but then fetch and submit work EthProxy-style.
+                    // Switch the connection to EthProxy instead of rejecting it.
+                    SwitchToEthProxy(connection, context);
 
                     await OnGetJobAsync(connection, tsRequest);
                     break;
@@ -920,7 +939,7 @@ public class ZanoPool : PoolBase
                     break;
 
                 case ZanoStratumMethods.SubmitWork:
-                    EnsureProtocolVersion(context, 1);
+                    SwitchToEthProxy(connection, context);
 
                     await OnSubmitWorkAsync(connection, tsRequest, ct);
                     break;
