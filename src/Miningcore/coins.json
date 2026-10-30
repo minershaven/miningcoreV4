@@ -8532,5 +8532,20 @@
     "explorerBlockLink": "",
     "explorerTxLink": "",
     "explorerAccountLink": ""
+  },
+  "quantus": {
+    "name": "Quantus",
+    "canonicalName": "Quantus",
+    "symbol": "QTC",
+    "family": "quantus",
+    "website": "https://quantus.com/",
+    "github": "https://github.com/Quantus-Network",
+    "market": "",
+    "twitter": "",
+    "telegram": "",
+    "discord": "",
+    "explorerBlockLink": "",
+    "explorerTxLink": "",
+    "explorerAccountLink": ""
   }
 }

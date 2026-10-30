@@ -392,6 +392,19 @@ public partial class PearlCoinTemplate
     #endregion
 }
 
+// Quantus
+public partial class QuantusCoinTemplate
+{
+    #region Overrides of CoinTemplate
+
+    public override string GetAlgorithmName()
+    {
+        return "qpow";
+    }
+
+    #endregion
+}
+
 public partial class PoolConfig
 {
     /// <summary>

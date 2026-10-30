@@ -15,6 +15,7 @@ using Miningcore.Blockchain.Kaspa;
 using Miningcore.Blockchain.Nexa;
 using Miningcore.Blockchain.Pearl;
 using Miningcore.Blockchain.Progpow;
+using Miningcore.Blockchain.Quantus; // Quantus
 using Miningcore.Blockchain.Satoshicash;
 using Miningcore.Blockchain.Warthog;
 using Miningcore.Blockchain.Xelis;
@@ -264,6 +265,11 @@ public class AutofacModule : Module
         // Pearl
 
         builder.RegisterType<PearlJobManager>();
+
+        //////////////////////
+        // Quantus
+
+        builder.RegisterType<QuantusJobManager>();
 
         base.Load(builder);
     }

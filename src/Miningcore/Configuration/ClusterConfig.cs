@@ -67,6 +67,10 @@ public enum CoinFamily
 
     [EnumMember(Value = "pearl")]
     Pearl,
+
+    // Quantus
+    [EnumMember(Value = "quantus")]
+    Quantus,
 }
 
 public abstract partial class CoinTemplate
@@ -186,6 +190,7 @@ public abstract partial class CoinTemplate
         {CoinFamily.Xelis, typeof(XelisCoinTemplate)},
         {CoinFamily.Zano, typeof(ZanoCoinTemplate)},
         {CoinFamily.Pearl, typeof(PearlCoinTemplate)},
+        {CoinFamily.Quantus, typeof(QuantusCoinTemplate)}, // Quantus
     }.ToFrozenDictionary();
 }
 
@@ -778,6 +783,11 @@ public partial class XelisCoinTemplate : CoinTemplate
 }
 
 public partial class PearlCoinTemplate : CoinTemplate
+{
+}
+
+// Quantus
+public partial class QuantusCoinTemplate : CoinTemplate
 {
 }
 
