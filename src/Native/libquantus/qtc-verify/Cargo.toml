@@ -1,0 +1,12 @@
+[package]
+name = "qtc-verify"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+hex = { workspace = true, features = ["std"] }
+qp-header = { path = "../primitives/header" }
+qpow-math = { path = "../qpow-math" }
+serde_json = { workspace = true, features = ["std"] }
+sp-runtime = { workspace = true, features = ["std", "serde"] }

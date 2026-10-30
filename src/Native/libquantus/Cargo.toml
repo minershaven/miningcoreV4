@@ -1,0 +1,19 @@
+[package]
+name = "libquantus"
+version = "0.1.0"
+edition = "2021"
+description = "Quantus QPoW (Poseidon2) hash for Miningcore"
+
+[lib]
+name = "quantus"
+crate-type = ["cdylib"]
+
+[dependencies]
+# Same version and checksum as quantus-node v1.0.5 (chain Cargo.lock)
+qp-poseidon-core = "=3.1.0"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
